@@ -38,7 +38,11 @@
 <div class="load-title">Bavana Solutions</div>
 <div class="load-msg" id="loading-msg">Connecting to Google Sheets…</div>
 </div>
-<aside class="sidebar">
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+<button class="hamburger" id="hamburger-btn" onclick="toggleSidebar()" aria-label="Open menu">
+  <span></span><span></span><span></span>
+</button>
+<aside class="sidebar" id="sidebar">
 <div class="brand">
   <div class="brand-logo">
     <div class="brand-icon"><img src="https://lh3.googleusercontent.com/d/1dd2NMYnijaX2p98tQLDbk3FaDhnWyMvg" alt="Logo"></div>
@@ -83,7 +87,10 @@
 </aside>
 <main class="main">
 <div class="topbar">
-  <div class="topbar-title" id="page-title">Dashboard <span>Overview</span></div>
+  <div class="topbar-left">
+    <div class="topbar-title" id="page-title">Dashboard <span>Overview</span></div>
+  </div>
+  <div class="topbar-right">
   <span class="fy-badge" id="fy-label">FY 2026-27</span>
   <div class="sync-status">
     <div class="sync-dot" id="sync-dot"></div>
@@ -92,6 +99,7 @@
   <button class="btn btn-outline btn-sm" onclick="refreshAllData()">⟳ Refresh</button>
   <span class="user-chip" id="user-chip" onclick="logoutUser()" title="Click to log out">👤 <span id="user-chip-label">Staff</span></span>
   <button class="btn btn-gold" id="topbar-action" onclick="handleTopAction()">+ New Invoice</button>
+  </div>
 </div>
 
 <div class="content">
@@ -500,6 +508,24 @@
 </div>
 </div>
 <div class="toast-container" id="toasts"></div>
+<script>
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('active');
+  document.getElementById('hamburger-btn').classList.toggle('is-open');
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('active');
+  document.getElementById('hamburger-btn').classList.remove('is-open');
+}
+// Close sidebar when a nav item is clicked on mobile
+document.querySelectorAll('.nav-item').forEach(function(el){
+  el.addEventListener('click', function(){
+    if(window.innerWidth < 768) closeSidebar();
+  });
+});
+</script>
 <script src="BavanaSolutions.js"></script>
 </body>
 </html>

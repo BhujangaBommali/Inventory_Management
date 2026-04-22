@@ -820,15 +820,15 @@ function buildInvoiceHTML(inv, co, items, printMode = false) {
         <div>
           <div class="inv-company">${co.name || 'Bavana Solutions'}</div>
           <div class="inv-company-sub">
-            GSTIN: ${co.gstin || '—'} | PAN: ${co.pan || '—'}<br>
-            ${co.address || ''}<br>
-            ${co.phone || ''} | ${co.email || ''}
+		  ${co.address || ''}<br>
+          GSTIN: ${co.gstin || '—'} ; STATE :<b>VISAKHAPATNAM - </b>530007<br>
+		  PHONE : ${co.phone || ''} ; Email :  ${co.email || ''}
           </div>
         </div>
         <div style="text-align:right">
           <div class="inv-badge">ISSUE NOTE</div>
           <div style="margin-top:10px;font-size:13px;color:#555">
-            Invoice #: <strong>${inv.invNum || '—'}</strong><br>
+            Issue No #: <strong>${inv.invNum || '—'}</strong><br>
             Date: ${migrateDateField(inv.date) || '—'}<br>
             Due: ${migrateDateField(inv.dueDate) || '—'}
           </div>
