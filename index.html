@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BAVANA SOLUTIONS</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon">
+</head>
+<body>
+
+<!-- ════ LOGIN OVERLAY ════ -->
+<div id="login-overlay">
+<div class="login-box">
+<div class="login-logo"><img src="https://lh3.googleusercontent.com/d/1dd2NMYnijaX2p98tQLDbk3FaDhnWyMvg" alt="Logo"></div>
+<div class="login-title">Bavana Solutions</div>
+<div class="login-sub">Inventory &amp; Invoicing — Please sign in to continue</div>
+<div class="login-role-grid">
+  <div class="role-card" id="role-staff" onclick="selectRole('staff')">
+    <div class="role-icon">👤</div>
+    <div class="role-label">Staff</div>
+  </div>
+  <div class="role-card" id="role-harnath" onclick="selectRole('harnath')">
+    <div class="role-icon">🔐</div>
+    <div class="role-label">Admin</div>
+  </div>
+</div>
+<div id="login-password-section">
+  <label for="login-pass-input">Admin Password</label>
+  <input type="password" id="login-pass-input" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+  <div id="login-error"></div>
+</div>
+<button class="login-btn" onclick="doLogin()">Sign In →</button>
+<div style="margin-top:18px;font-size:11px;color:var(--text3)">Staff can view &amp; add records · Admin can also delete</div>
+</div>
+</div>
+
+<!-- ════ LOADING OVERLAY ════ -->
+<div id="loading-overlay">
+<div class="load-spin"></div>
+<div class="load-title">Bavana Solutions</div>
+<div class="load-msg" id="loading-msg">Connecting to Google Sheets…</div>
+</div>
+
+<!-- ════ SIDEBAR ════ -->
+<aside class="sidebar">
+<div class="brand">
+  <div class="brand-logo">
+    <div class="brand-icon"><img src="https://lh3.googleusercontent.com/d/1dd2NMYnijaX2p98tQLDbk3FaDhnWyMvg" alt="Logo"></div>
+    <span class="brand-name">Bavana Solutions</span>
+  </div>
+  <div class="brand-sub">Inventory &amp; Invoicing</div>
+  <div style="display:flex;justify-content:center"><span class="gst-chip">✓ GST Compliant</span></div>
+</div>
+
+<div class="nav-section">
+  <div class="nav-label">Main</div>
+  <div class="nav-item active" onclick="showSection('dashboard',this)"><span class="nav-icon">🏠</span> Dashboard</div>
+</div>
+<div class="nav-section">
+  <div class="nav-label">Transactions</div>
+  <div class="nav-item" onclick="showSection('purchases',this)"><span class="nav-icon">🛒</span> Purchases Entry</div>
+  <div class="nav-item" onclick="showSection('invoices',this)"><span class="nav-icon">📄</span> Tax Invoices <span class="nav-badge" id="inv-count">0</span></div>
+</div>
+<div class="nav-section">
+  <div class="nav-label">Master Data</div>
+  <div class="nav-item" onclick="showSection('inventory',this)"><span class="nav-icon">📦</span> Inventory</div>
+  <div class="nav-item" onclick="showSection('suppliers',this)"><span class="nav-icon">🏭</span> Suppliers</div>
+  <div class="nav-item" onclick="showSection('customers',this)"><span class="nav-icon">👥</span> Customers</div>
+</div>
+<div class="nav-section">
+  <div class="nav-label">Reports</div>
+  <div class="nav-item" onclick="showSection('gst',this)"><span class="nav-icon">🧾</span> GST Summary</div>
+  <!--<div class="nav-item" onclick="showSection('reports',this)"><span class="nav-icon">📊</span> Reports</div>-->
+</div>
+<!--<div class="nav-section">
+  <div class="nav-label">Settings</div>
+  <div class="nav-item" onclick="showSection('settings',this)"><span class="nav-icon">⚙️</span> Company Setup</div>
+</div>-->
+
+<div class="sidebar-footer">
+  <div class="gs-badge">
+    <div class="gs-dot" id="gs-dot"></div>
+    <div>
+      <div class="gs-text">Google Sheets</div>
+      <div class="gs-sub" id="gs-status-text">Connecting…</div>
+    </div>
+  </div>
+</div>
+</aside>
+
+<!-- ════ MAIN ════ -->
+<main class="main">
+<div class="topbar">
+  <div class="topbar-title" id="page-title">Dashboard <span>Overview</span></div>
+  <span class="fy-badge" id="fy-label">FY 2026-27</span>
+  <div class="sync-status">
+    <div class="sync-dot" id="sync-dot"></div>
+    <span id="sync-label">Synced</span>
+  </div>
+  <button class="btn btn-outline btn-sm" onclick="refreshAllData()">⟳ Refresh</button>
+  <span class="user-chip" id="user-chip" onclick="logoutUser()" title="Click to log out">👤 <span id="user-chip-label">Staff</span></span>
+  <button class="btn btn-gold" id="topbar-action" onclick="handleTopAction()">+ New Invoice</button>
+</div>
+
+<div class="content">
+
+  <!-- ── DASHBOARD ── -->
+  <div class="section active" id="section-dashboard">
+  <div class="stats-grid">
+    <div class="stat-card gold"><div class="stat-icon">💰</div><div class="stat-value" id="stat-revenue">₹0</div><div class="stat-label">Total Revenue (Incl. GST)</div><div class="stat-change up" id="stat-revenue-change">↑ 0 invoices</div></div>
+    <div class="stat-card teal"><div class="stat-icon">🛒</div><div class="stat-value" id="stat-purchases">₹0</div><div class="stat-label">Total Purchases</div><div class="stat-change up" id="stat-pur-change">↑ 0 entries</div></div>
+    <div class="stat-card green"><div class="stat-icon">🧾</div><div class="stat-value" id="stat-gst-collected">₹0</div><div class="stat-label">GST Collected (Output)</div><div class="stat-change up" id="stat-gst-credit">Input credit: ₹0</div></div>
+    <div class="stat-card red"><div class="stat-icon">📦</div><div class="stat-value" id="stat-items">0</div><div class="stat-label">Inventory Items</div><div class="stat-change" id="stat-items-change" style="color:var(--text3)">0 low stock</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+    <div class="stat-card orange"><div class="stat-icon">🏢</div><div class="stat-value" id="stat-customers">0</div><div class="stat-label">Customers</div><div class="stat-change" style="color:var(--text3)" id="stat-sup-count">0 suppliers</div></div>
+    <div class="stat-card teal"><div class="stat-icon">📊</div><div class="stat-value" id="stat-net-gst">₹0</div><div class="stat-label">Net GST Payable</div><div class="stat-change" style="color:var(--text3)">Output − Input Credit</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Recent Tax Invoices</div><button class="btn btn-outline btn-sm" onclick="showSection('invoices',document.querySelector('[onclick*=invoices]'))">View All</button></div>
+      <div id="dash-invoices"><div class="empty-state"><div class="empty-icon">📄</div><h3>No invoices yet</h3></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Recent Purchases</div><button class="btn btn-outline btn-sm" onclick="showSection('purchases',document.querySelector('[onclick*=purchases]'))">View All</button></div>
+      <div id="dash-purchases"><div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchases yet</h3></div></div>
+    </div>
+  </div>
+  </div>
+
+  <!-- ── PURCHASES ── -->
+  <div class="section" id="section-purchases">
+  <div class="toolbar">
+    <div class="search-box"><span>🔍</span><input type="text" placeholder="Search purchases..." oninput="filterTable('pur-tbody',this.value)"></div>
+    <button class="btn btn-gold" onclick="openNewPurchase()">+ Add Purchase</button>
+    <button class="btn btn-outline btn-sm" onclick="exportData('purchases')">↓ Export CSV</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>PO #</th><th>Date</th><th>Supplier</th><th>Item</th><th>Qty</th><th>Taxable Amt</th><th>CGST</th><th>SGST</th><th>IGST</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="pur-tbody"><tr><td colspan="12"><div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchases recorded</h3><p>Click "+ Add Purchase" to record your first purchase</p></div></td></tr></tbody>
+    </table>
+  </div>
+  </div>
+
+  <!-- ── INVOICES ── -->
+  <div class="section" id="section-invoices">
+  <div class="toolbar">
+    <div class="search-box"><span>🔍</span><input type="text" placeholder="Search invoices..." oninput="filterTable('inv-tbody',this.value)"></div>
+    <div class="tabs-bar">
+      <button class="tab-btn active" onclick="filterInvoices('all',this)">All</button>
+      <button class="tab-btn" onclick="filterInvoices('Paid',this)">Paid</button>
+      <button class="tab-btn" onclick="filterInvoices('Pending',this)">Pending</button>
+      <button class="tab-btn" onclick="filterInvoices('Overdue',this)">Overdue</button>
+    </div>
+    <button class="btn btn-gold" onclick="openNewInvoice()">+ New Tax Invoice</button>
+    <button class="btn btn-outline btn-sm" onclick="exportData('invoices')">↓ Export CSV</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Invoice #</th><th>Date</th><th>Customer</th><th>GSTIN</th><th>Taxable Amt</th><th>GST</th><th>Total</th><th>Type</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="inv-tbody"><tr><td colspan="10"><div class="empty-state"><div class="empty-icon">📄</div><h3>No invoices created</h3><p>Click "+ New Tax Invoice" to generate your first invoice</p></div></td></tr></tbody>
+    </table>
+  </div>
+  </div>
+
+  <!-- ── INVENTORY ── -->
+  <div class="section" id="section-inventory">
+  <div class="toolbar">
+    <div class="search-box"><span>🔍</span><input type="text" placeholder="Search items..." oninput="filterTable('item-tbody',this.value)"></div>
+    <button class="btn btn-gold" onclick="openModal('modal-item')">+ Add Item</button>
+    <button class="btn btn-teal" onclick="recalculateAllStock()" title="Recompute stock from Opening + Purchases − Invoices">⟳ Recalculate Stock</button>
+    <button class="btn btn-orange" onclick="openFixOpeningStock()" title="Correct corrupted opening stock values">🔧 Fix Opening Stock</button>
+    <button class="btn btn-outline btn-sm" onclick="exportData('inventory')">↓ Export CSV</button>
+  </div>
+  <div id="stock-summary-bar" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 16px;margin-bottom:12px;font-size:12.5px;color:var(--text2)"></div>
+  <div class="card">
+    <table>
+      <thead><tr><th>SKU</th><th>Product Name</th><th>HSN/SAC</th><th>Category</th><th>Opening</th><th>Purchased</th><th>Invoiced</th><th>In Stock</th><th>Min Stock</th><th>GST %</th><th>Sell Price</th><th>Buy Price</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="item-tbody"><tr><td colspan="14"><div class="empty-state"><div class="empty-icon">📦</div><h3>No items in inventory</h3><p>Click "+ Add Item" to add your first product</p></div></td></tr></tbody>
+    </table>
+  </div>
+  </div>
+
+  <!-- ── SUPPLIERS ── -->
+  <div class="section" id="section-suppliers">
+  <div class="toolbar">
+    <div class="search-box"><span>🔍</span><input type="text" placeholder="Search suppliers..." oninput="filterTable('sup-tbody',this.value)"></div>
+    <button class="btn btn-gold" onclick="openModal('modal-supplier')">+ Add Supplier</button>
+    <button class="btn btn-outline btn-sm" onclick="exportData('suppliers')">↓ Export CSV</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>ID</th><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>State</th><th>GSTIN</th><th>Action</th></tr></thead>
+      <tbody id="sup-tbody"><tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏭</div><h3>No suppliers added</h3></div></td></tr></tbody>
+    </table>
+  </div>
+  </div>
+
+  <!-- ── CUSTOMERS ── -->
+  <div class="section" id="section-customers">
+  <div class="toolbar">
+    <div class="search-box"><span>🔍</span><input type="text" placeholder="Search customers..." oninput="filterTable('cust-tbody',this.value)"></div>
+    <button class="btn btn-gold" onclick="openModal('modal-customer')">+ Add Customer</button>
+    <button class="btn btn-outline btn-sm" onclick="exportData('customers')">↓ Export CSV</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>State</th><th>GSTIN</th><th>Type</th><th>Action</th></tr></thead>
+      <tbody id="cust-tbody"><tr><td colspan="8"><div class="empty-state"><div class="empty-icon">👥</div><h3>No customers added</h3></div></td></tr></tbody>
+    </table>
+  </div>
+  </div>
+
+  <!-- ── GST SUMMARY ── -->
+  <div class="section" id="section-gst">
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px">
+    <div class="stat-card green"><div class="stat-icon">📤</div><div class="stat-value" id="gst-output">₹0</div><div class="stat-label">Output GST (Collected)</div></div>
+    <div class="stat-card teal"><div class="stat-icon">📥</div><div class="stat-value" id="gst-input">₹0</div><div class="stat-label">Input Tax Credit (ITC)</div></div>
+    <div class="stat-card gold"><div class="stat-icon">⚖️</div><div class="stat-value" id="gst-net">₹0</div><div class="stat-label">Net GST Payable</div></div>
+  </div>
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header"><div class="card-title">GST Rate-wise Summary (GSTR-1 View)</div></div>
+    <div style="padding:20px 24px">
+      <table class="gst-table">
+        <thead><tr><th>GST Rate</th><th>Taxable Amount</th><th>CGST</th><th>SGST</th><th>IGST</th><th>Total GST</th><th>Invoice Count</th></tr></thead>
+        <tbody id="gst-rate-tbody"><tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🧾</div><h3>No GST data</h3></div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div style="margin-top:20px;display:flex;gap:12px">
+    <button class="btn btn-green" onclick="exportGSTR1()">↓ Export GSTR-1 (CSV)</button>
+    <button class="btn btn-teal" onclick="exportGSTR3B()">↓ Export GSTR-3B Summary</button>
+  </div>
+  </div>
+
+  <!-- ── REPORTS ── -->
+  <div class="section" id="section-reports">
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px">
+    <div class="card" style="padding:24px;cursor:pointer" onclick="generateReport('sales')"><div style="font-size:32px;margin-bottom:12px">📊</div><div style="font-weight:600;margin-bottom:4px">Sales Report</div><div style="font-size:12px;color:var(--text3)">Revenue, invoices &amp; customer trends</div></div>
+    <div class="card" style="padding:24px;cursor:pointer" onclick="generateReport('purchases')"><div style="font-size:32px;margin-bottom:12px">🛒</div><div style="font-weight:600;margin-bottom:4px">Purchase Report</div><div style="font-size:12px;color:var(--text3)">Supplier-wise purchase analysis</div></div>
+    <div class="card" style="padding:24px;cursor:pointer" onclick="generateReport('inventory')"><div style="font-size:32px;margin-bottom:12px">📦</div><div style="font-weight:600;margin-bottom:4px">Inventory Report</div><div style="font-size:12px;color:var(--text3)">Stock levels, low stock alerts</div></div>
+    <div class="card" style="padding:24px;cursor:pointer" onclick="generateReport('pl')"><div style="font-size:32px;margin-bottom:12px">💰</div><div style="font-weight:600;margin-bottom:4px">Profit &amp; Loss</div><div style="font-size:12px;color:var(--text3)">Revenue vs purchase cost</div></div>
+    <div class="card" style="padding:24px;cursor:pointer" onclick="generateReport('monthly')"><div style="font-size:32px;margin-bottom:12px">📅</div><div style="font-weight:600;margin-bottom:4px">Monthly Summary</div><div style="font-size:12px;color:var(--text3)">Month-by-month breakdown</div></div>
+    <div class="card" style="padding:24px;cursor:pointer" onclick="showSection('gst',document.querySelector('[onclick*=gst]'))"><div style="font-size:32px;margin-bottom:12px">🧾</div><div style="font-weight:600;margin-bottom:4px">GST Reports</div><div style="font-size:12px;color:var(--text3)">GSTR-1, GSTR-3B summaries</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Summary</div><button class="btn btn-gold btn-sm" onclick="exportAll()">↓ Export All</button></div>
+    <div style="padding:24px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px">
+      <div><div style="font-size:11px;color:var(--text3);font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Revenue</div><div style="font-family:'DM Serif Display',serif;font-size:24px;color:var(--green)" id="rep-revenue">₹0.00</div></div>
+      <div><div style="font-size:11px;color:var(--text3);font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Purchases</div><div style="font-family:'DM Serif Display',serif;font-size:24px;color:var(--red)" id="rep-purchase">₹0.00</div></div>
+      <div><div style="font-size:11px;color:var(--text3);font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Gross Profit</div><div style="font-family:'DM Serif Display',serif;font-size:24px;color:var(--gold)" id="rep-profit">₹0.00</div></div>
+    </div>
+  </div>
+  </div>
+
+  <!-- ── COMPANY SETTINGS ── -->
+  <div class="section" id="section-settings">
+  <div style="max-width:760px">
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header"><div class="card-title">🏢 Company Information</div></div>
+      <div style="padding:20px 24px">
+        <div class="form-grid" style="margin-bottom:16px">
+          <div class="form-group"><label>Company Name <span class="req">*</span></label><input type="text" id="co-name" placeholder="Your Business Name"></div>
+          <div class="form-group"><label>GSTIN <span class="req">*</span></label><input type="text" id="co-gstin" placeholder="e.g. 36AABCU9603R1ZX" maxlength="15" style="text-transform:uppercase"><div class="form-hint">15-char: State Code + PAN + Entity + Z + Checksum</div></div>
+          <div class="form-group"><label>PAN</label><input type="text" id="co-pan" placeholder="AAAAA0000A" maxlength="10"></div>
+          <div class="form-group"><label>State</label>
+            <select id="co-state"><option>Telangana</option><option>Andhra Pradesh</option><option>Maharashtra</option><option>Karnataka</option><option>Tamil Nadu</option><option>Delhi</option><option>Gujarat</option><option>Rajasthan</option><option>Uttar Pradesh</option><option>West Bengal</option><option>Kerala</option><option>Other</option></select>
+          </div>
+          <div class="form-group"><label>State Code</label><input type="text" id="co-state-code" placeholder="e.g., 36 for Telangana" maxlength="2"></div>
+          <div class="form-group"><label>Phone</label><input type="tel" id="co-phone" placeholder="10-digit mobile (e.g. 9876543210)" maxlength="13"><div class="form-hint">Enter 10-digit Indian mobile number</div></div>
+          <div class="form-group"><label>Email</label><input type="email" id="co-email" placeholder="billing@company.com"></div>
+          <div class="form-group"><label>Website</label><input type="text" id="co-website" placeholder="www.yourcompany.com"></div>
+          <div class="form-group full"><label>Address</label><textarea id="co-address" placeholder="Full registered address..."></textarea></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header"><div class="card-title">🏦 Bank Details (for Invoice)</div></div>
+      <div style="padding:20px 24px">
+        <div class="form-grid" style="margin-bottom:16px">
+          <div class="form-group"><label>Bank Name</label><input type="text" id="co-bank" placeholder="State Bank of India"></div>
+          <div class="form-group"><label>Branch</label><input type="text" id="co-branch" placeholder="Hyderabad Main Branch"></div>
+          <div class="form-group"><label>Account Number</label><input type="text" id="co-accno" placeholder="Account number"></div>
+          <div class="form-group"><label>IFSC Code</label><input type="text" id="co-ifsc" placeholder="SBIN0001234"></div>
+          <div class="form-group"><label>Account Type</label><select id="co-acctype"><option>Current</option><option>Savings</option></select></div>
+          <div class="form-group"><label>UPI ID</label><input type="text" id="co-upi" placeholder="yourname@upi"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header"><div class="card-title">🧾 Invoice Preferences</div></div>
+      <div style="padding:20px 24px">
+        <div class="form-grid" style="margin-bottom:16px">
+          <div class="form-group"><label>Invoice Prefix</label><input type="text" id="co-inv-prefix" placeholder="INV-" value="INV-"></div>
+          <div class="form-group"><label>Default Payment Terms</label><select id="co-pay-terms"><option>Net 30</option><option>Net 15</option><option>Net 7</option><option>Due on Receipt</option></select></div>
+          <div class="form-group"><label>Default Currency</label><select id="co-currency"><option value="INR">₹ INR – Indian Rupee</option></select></div>
+          <div class="form-group"><label>Default GST Type</label><select id="co-gst-type"><option value="intra">Intra-State (CGST+SGST)</option><option value="inter">Inter-State (IGST)</option></select></div>
+          <div class="form-group full"><label>Invoice Footer / Terms &amp; Conditions</label><textarea id="co-inv-footer">Thank you for your business! Please make payment by the due date. Goods once sold are not returnable. Subject to Hyderabad jurisdiction.</textarea></div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-gold" onclick="saveCompanySettings()">💾 Save Company Settings</button>
+  </div>
+  </div>
+
+</div><!-- /content -->
+</main>
+
+<!-- ════ MODALS ════ -->
+
+<!-- Fix Opening Stock Modal -->
+<div class="modal-overlay" id="modal-fix-opening">
+<div class="modal modal-lg">
+  <div class="modal-header">
+    <div>
+      <div class="modal-title">🔧 Fix Opening Stock</div>
+      <div class="modal-sub">Correct the opening stock for each item. This is the baseline quantity before any purchases or sales. Set it to the actual physical quantity you had when you first added each item.</div>
+    </div>
+    <button class="modal-close" onclick="closeModal('modal-fix-opening')">✕</button>
+  </div>
+  <div class="modal-body">
+    <div style="background:var(--orange-dim);border:1px solid rgba(255,169,77,0.3);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:18px;font-size:13px;color:var(--orange)">
+      ⚠ Your Google Sheet has corrupted opening stock values (likely prices got stored as quantities). Enter the correct opening quantity for each item below, then click <strong>Save All Corrections</strong>. Stock will be recomputed automatically after saving.
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface2)">Item Name</th>
+          <th style="padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface2)">Current (Corrupted)</th>
+          <th style="padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface2)">Correct Opening Qty</th>
+          <th style="padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface2)">Unit</th>
+        </tr>
+      </thead>
+      <tbody id="fix-opening-tbody"></tbody>
+    </table>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-fix-opening')">Cancel</button>
+    <button class="btn btn-gold" id="save-fix-btn" onclick="saveOpeningStockFix()">💾 Save All Corrections &amp; Recompute</button>
+  </div>
+</div>
+</div>
+
+<!-- Purchase Modal -->
+<div class="modal-overlay" id="modal-purchase">
+<div class="modal modal-lg">
+  <div class="modal-header"><div><div class="modal-title">Add Purchase Entry</div><div class="modal-sub">Record a new GST purchase from supplier</div></div><button class="modal-close" onclick="closeModal('modal-purchase')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-grid" style="margin-bottom:16px">
+      <div class="form-group"><label>PO #</label><input type="text" id="pur-po" readonly></div>
+      <div class="form-group"><label>Date <span class="req">*</span></label><input type="text" id="pur-date" placeholder="DD-MMM-YYYY" maxlength="11" oninput="formatDateInput(this)"></div>
+      <div class="form-group"><label>Supplier <span class="req">*</span></label><select id="pur-supplier"><option value="">— Select Supplier —</option></select></div>
+      <div class="form-group"><label>Inventory Item <span class="req">*</span></label><select id="pur-item" onchange="autofillPurchasePrice()"><option value="">— Select Item —</option></select></div>
+      <div class="form-group"><label>Quantity <span class="req">*</span></label><input type="number" id="pur-qty" placeholder="0" min="1" oninput="calcPurTotal()"></div>
+      <div class="form-group"><label>Unit Price (₹) <span class="req">*</span></label><input type="number" id="pur-price" placeholder="0.00" step="0.01" oninput="calcPurTotal()"></div>
+      <div class="form-group"><label>GST Rate</label>
+        <select id="pur-tax" onchange="calcPurTotal()">
+          <option value="0">0% — Exempt/Nil</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18" selected>18% GST</option><option value="28">28% GST</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Transaction Type</label>
+        <select id="pur-gst-type" onchange="calcPurTotal()">
+          <option value="intra">Intra-State (CGST + SGST)</option><option value="inter">Inter-State (IGST)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Taxable Amount (₹)</label><input type="text" id="pur-taxable" readonly style="color:var(--teal)"></div>
+      <div class="form-group"><label>Total GST (₹)</label><input type="text" id="pur-gst-amt" readonly style="color:var(--green)"></div>
+      <div class="form-group"><label>Total Amount (₹)</label><input type="text" id="pur-total" readonly style="color:var(--gold);font-weight:700"></div>
+      <div class="form-group"><label>Payment Status</label><select id="pur-status"><option>Paid</option><option>Pending</option><option>Partial</option></select></div>
+      <div class="form-group"><label>Supplier Invoice #</label><input type="text" id="pur-billno" placeholder="SUP-INV-001"></div>
+      <div class="form-group"><label>Bill Date</label><input type="text" id="pur-billdate" placeholder="DD-MMM-YYYY" maxlength="11" oninput="formatDateInput(this)"></div>
+      <div class="form-group full"><label>Notes</label><textarea id="pur-notes" placeholder="Additional notes..."></textarea></div>
+    </div>
+    <div id="pur-gst-breakdown" class="gst-summary-box" style="display:none">
+      <div class="gst-summary-title">GST Breakdown</div>
+      <div class="gst-summary-row"><span>Taxable Amount</span><span id="pur-gs-taxable">₹0.00</span></div>
+      <div class="gst-summary-row" id="pur-gs-cgst-row"><span>CGST @<span id="pur-gs-cgst-rate">0</span>%</span><span id="pur-gs-cgst">₹0.00</span></div>
+      <div class="gst-summary-row" id="pur-gs-sgst-row"><span>SGST @<span id="pur-gs-sgst-rate">0</span>%</span><span id="pur-gs-sgst">₹0.00</span></div>
+      <div class="gst-summary-row" id="pur-gs-igst-row" style="display:none"><span>IGST @<span id="pur-gs-igst-rate">0</span>%</span><span id="pur-gs-igst">₹0.00</span></div>
+      <div class="gst-summary-row" style="font-weight:700;color:var(--gold);border-top:1px solid var(--border);padding-top:6px;margin-top:4px"><span>Grand Total</span><span id="pur-gs-total">₹0.00</span></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-purchase')">Cancel</button>
+    <button class="btn btn-gold" id="save-purchase-btn" onclick="savePurchase()">Save Purchase</button>
+  </div>
+</div>
+</div>
+
+<!-- Invoice Modal -->
+<div class="modal-overlay" id="modal-invoice">
+<div class="modal modal-xl">
+  <div class="modal-header"><div><div class="modal-title">Create Tax Invoice</div><div class="modal-sub">Generate a GST-compliant tax invoice</div></div><button class="modal-close" onclick="closeModal('modal-invoice')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-grid cols-4" style="margin-bottom:16px">
+      <div class="form-group"><label>Invoice #</label><input type="text" id="inv-num" readonly></div>
+      <div class="form-group"><label>Invoice Date <span class="req">*</span></label><input type="text" id="inv-date" placeholder="DD-MMM-YYYY" maxlength="11" oninput="formatDateInput(this)"></div>
+      <div class="form-group"><label>Due Date</label><input type="text" id="inv-due" placeholder="DD-MMM-YYYY" maxlength="11" oninput="formatDateInput(this)"></div>
+      <div class="form-group"><label>Payment Terms</label><select id="inv-terms"><option>Net 30</option><option>Net 15</option><option>Net 7</option><option>Due on Receipt</option></select></div>
+      <div class="form-group" style="grid-column:span 2"><label>Customer <span class="req">*</span></label><select id="inv-customer" onchange="fillCustomerDetails()"><option value="">— Select Customer —</option></select></div>
+      <div class="form-group"><label>Customer GSTIN</label><input type="text" id="inv-cust-gstin" readonly placeholder="Auto-filled"></div>
+      <div class="form-group"><label>GST Type</label><select id="inv-gst-type" onchange="recalcInvoice()"><option value="intra">Intra-State (CGST+SGST)</option><option value="inter">Inter-State (IGST)</option></select></div>
+      <div class="form-group"><label>Place of Supply</label>
+        <select id="inv-pos"><option>Telangana</option><option>Andhra Pradesh</option><option>Maharashtra</option><option>Karnataka</option><option>Tamil Nadu</option><option>Delhi</option><option>Gujarat</option><option>Rajasthan</option><option>Uttar Pradesh</option><option>Other</option></select>
+      </div>
+      <div class="form-group"><label>Reverse Charge?</label><select id="inv-rca"><option value="N">No</option><option value="Y">Yes</option></select></div>
+      <div class="form-group"><label>E-way Bill #</label><input type="text" id="inv-eway" placeholder="Optional"></div>
+    </div>
+    <hr class="section-divider">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text2)">Line Items</div>
+      <button class="btn btn-outline btn-sm" onclick="addInvoiceRow()">+ Add Row</button>
+    </div>
+    <table class="inv-items-table">
+      <thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th><th>Rate (₹)</th><th>GST %</th><th>Amount (₹)</th><th></th></tr></thead>
+      <tbody id="inv-line-items"></tbody>
+    </table>
+    <div class="totals-box" style="margin-top:16px">
+      <div class="totals-inner">
+        <div class="totals-row"><span>Subtotal (Taxable)</span><span id="inv-subtotal">₹0.00</span></div>
+        <div class="totals-row gst-split" id="inv-cgst-row"><span>CGST</span><span id="inv-cgst-amt">₹0.00</span></div>
+        <div class="totals-row gst-split" id="inv-sgst-row"><span>SGST</span><span id="inv-sgst-amt">₹0.00</span></div>
+        <div class="totals-row gst-split" id="inv-igst-row" style="display:none"><span>IGST</span><span id="inv-igst-amt">₹0.00</span></div>
+        <div class="totals-row"><span>Total GST</span><span id="inv-tax-amt">₹0.00</span></div>
+        <div class="totals-row"><span>Discount <input type="number" id="inv-discount" value="0" min="0" style="width:55px;text-align:right" oninput="recalcInvoice()">%</span><span id="inv-disc-amt" style="color:var(--red)">-₹0.00</span></div>
+        <div class="totals-row"><span>Round Off</span><span id="inv-roundoff">₹0.00</span></div>
+        <div class="totals-row" style="border-top:1px solid var(--border2);margin-top:4px"><span>Grand Total</span><span id="inv-total-amt">₹0.00</span></div>
+      </div>
+    </div>
+    <hr class="section-divider">
+    <div class="form-grid cols-1">
+      <div class="form-group"><label>Notes / Terms</label><textarea id="inv-notes">Thank you for your business! Please make payment within the due date.</textarea></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-invoice')">Cancel</button>
+    <button class="btn btn-teal" onclick="previewInvoice()">👁 Preview</button>
+    <button class="btn btn-gold" id="save-invoice-btn" onclick="saveInvoice()">Save Invoice</button>
+  </div>
+</div>
+</div>
+
+<!-- Inventory Item Modal -->
+<div class="modal-overlay" id="modal-item">
+<div class="modal modal-lg">
+  <div class="modal-header"><div><div class="modal-title">Add Inventory Item</div><div class="modal-sub">Add a new product or service</div></div><button class="modal-close" onclick="closeModal('modal-item')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-grid" style="margin-bottom:16px">
+      <div class="form-group"><label>SKU</label><input type="text" id="item-sku" placeholder="SKU-001"></div>
+      <div class="form-group"><label>Product Name <span class="req">*</span></label><input type="text" id="item-name" placeholder="Product name"></div>
+      <div class="form-group"><label>Item Type</label><select id="item-type"><option value="goods">Goods</option><option value="service">Service</option></select></div>
+      <div class="form-group"><label>Category</label>
+        <select id="item-cat"><option value="">Select Category</option><option value="Car Care">Car Care</option><option value="Ceramic">Ceramic</option><option value="Washing">Washing</option><option value="Retails">Retails</option><option value="PPF">PPF</option></select>
+      </div>
+      <div class="form-group"><label>HSN / SAC Code <span class="req">*</span></label><input type="text" id="item-hsn" placeholder="e.g. 8471 or 998313"><div class="form-hint">Required for GST compliance</div></div>
+      <div class="form-group"><label>GST Rate <span class="req">*</span></label>
+        <select id="item-gst"><option value="0">0% — Exempt/Nil Rated</option><option value="5">5% GST</option><option value="12">12% GST</option><option value="18" selected>18% GST</option><option value="28">28% GST</option></select>
+      </div>
+      <div class="form-group"><label>Unit of Measure</label>
+        <select id="item-unit"><option>Piece</option><option>Nos</option><option>Kg</option><option>Gram</option><option>Liter</option><option>ML</option><option>Box</option><option>Pack</option><option>Set</option><option>Meter</option><option>Sq.Ft</option><option>Hours</option></select>
+      </div>
+      <div class="form-group"><label>Cess %</label><input type="number" id="item-cess" placeholder="0" min="0" step="0.01" value="0"></div>
+      <div class="form-group"><label>Opening Stock</label><input type="number" id="item-stock" placeholder="0" min="0"></div>
+      <div class="form-group"><label>Min. Reorder Level</label><input type="number" id="item-minstock" placeholder="5" min="0"></div>
+      <div class="form-group"><label>Purchase Price (₹, excl. GST)</label><input type="number" id="item-pprice" placeholder="0.00" step="0.01"></div>
+      <div class="form-group"><label>Selling Price (₹, excl. GST)</label><input type="number" id="item-sprice" placeholder="0.00" step="0.01"></div>
+      <div class="form-group full"><label>Description</label><textarea id="item-desc" placeholder="Product description..."></textarea></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-item')">Cancel</button>
+    <button class="btn btn-gold" id="save-item-btn" onclick="saveItem()">Save Item</button>
+  </div>
+</div>
+</div>
+
+<!-- Supplier Modal -->
+<div class="modal-overlay" id="modal-supplier">
+<div class="modal modal-lg">
+  <div class="modal-header"><div><div class="modal-title">Add Supplier</div><div class="modal-sub">Add a new supplier to your network</div></div><button class="modal-close" onclick="closeModal('modal-supplier')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-grid" style="margin-bottom:16px">
+      <div class="form-group"><label>Company Name <span class="req">*</span></label><input type="text" id="sup-company" placeholder="Company name"></div>
+      <div class="form-group"><label>Contact Person</label><input type="text" id="sup-contact" placeholder="Full name"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="sup-email" placeholder="email@company.com"></div>
+      <div class="form-group"><label>Phone</label><input type="tel" id="sup-phone" placeholder="10-digit mobile (e.g. 9876543210)" maxlength="13"><div class="form-hint">Enter 10-digit Indian mobile number</div></div>
+      <div class="form-group"><label>GSTIN <span class="req">*</span></label><input type="text" id="sup-gstin" placeholder="e.g. 36AABCU9603R1ZX" maxlength="15" style="text-transform:uppercase"><div class="form-hint">15-char: State Code + PAN + Entity + Z + Checksum</div></div>
+      <div class="form-group"><label>PAN</label><input type="text" id="sup-pan" placeholder="AAAAA0000A" maxlength="10"></div>
+      <div class="form-group"><label>State</label>
+        <select id="sup-state"><option>Telangana</option><option>Andhra Pradesh</option><option>Maharashtra</option><option>Karnataka</option><option>Tamil Nadu</option><option>Delhi</option><option>Gujarat</option><option>Rajasthan</option><option>Uttar Pradesh</option><option>Other</option></select>
+      </div>
+      <div class="form-group"><label>City</label><input type="text" id="sup-city" placeholder="City"></div>
+      <div class="form-group full"><label>Address</label><textarea id="sup-address" placeholder="Full address..."></textarea></div>
+      <div class="form-group"><label>Payment Terms</label><select id="sup-terms"><option>Net 30</option><option>Net 15</option><option>Net 7</option><option>Advance</option></select></div>
+      <div class="form-group"><label>Bank Account #</label><input type="text" id="sup-bank" placeholder="Account number"></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-supplier')">Cancel</button>
+    <button class="btn btn-gold" id="save-supplier-btn" onclick="saveSupplier()">Save Supplier</button>
+  </div>
+</div>
+</div>
+
+<!-- Customer Modal -->
+<div class="modal-overlay" id="modal-customer">
+<div class="modal modal-lg">
+  <div class="modal-header"><div><div class="modal-title">Add Customer</div><div class="modal-sub">Add a new customer to your records</div></div><button class="modal-close" onclick="closeModal('modal-customer')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-grid" style="margin-bottom:16px">
+      <div class="form-group"><label>Customer Name <span class="req">*</span></label><input type="text" id="cust-name" placeholder="Full name / Company"></div>
+      <div class="form-group"><label>Customer Type</label><select id="cust-type"><option value="B2B">B2B (Registered Business)</option><option value="B2C">B2C (End Consumer)</option><option value="SEZ">SEZ Unit</option><option value="Export">Export</option></select></div>
+      <div class="form-group"><label>Email</label><input type="email" id="cust-email" placeholder="email@example.com"></div>
+      <div class="form-group"><label>Phone</label><input type="tel" id="cust-phone" placeholder="10-digit mobile (e.g. 9876543210)" maxlength="13"><div class="form-hint">Enter 10-digit Indian mobile number</div></div>
+      <div class="form-group"><label>GSTIN</label><input type="text" id="cust-gstin" placeholder="GSTIN (mandatory for B2B)" maxlength="15" style="text-transform:uppercase"><div class="form-hint">15-char: State Code + PAN + Entity + Z + Checksum</div></div>
+      <div class="form-group"><label>PAN</label><input type="text" id="cust-pan" placeholder="AAAAA0000A" maxlength="10"></div>
+      <div class="form-group"><label>State</label>
+        <select id="cust-state"><option>Telangana</option><option>Andhra Pradesh</option><option>Maharashtra</option><option>Karnataka</option><option>Tamil Nadu</option><option>Delhi</option><option>Gujarat</option><option>Rajasthan</option><option>Uttar Pradesh</option><option>Other</option></select>
+      </div>
+      <div class="form-group"><label>City</label><input type="text" id="cust-city" placeholder="City"></div>
+      <div class="form-group full"><label>Address</label><textarea id="cust-address" placeholder="Full billing address..."></textarea></div>
+      <div class="form-group"><label>Credit Limit (₹)</label><input type="number" id="cust-credit" placeholder="50000"></div>
+      <div class="form-group"><label>Payment Terms</label><select id="cust-terms"><option>Net 30</option><option>Net 15</option><option>Net 7</option><option>Advance</option></select></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-customer')">Cancel</button>
+    <button class="btn btn-gold" id="save-customer-btn" onclick="saveCustomer()">Save Customer</button>
+  </div>
+</div>
+</div>
+
+<!-- Invoice Preview Modal -->
+<div class="modal-overlay" id="modal-preview">
+<div class="modal modal-xl">
+  <div class="modal-header"><div><div class="modal-title">Tax Invoice Preview</div><div class="modal-sub">GST-compliant invoice ready to print</div></div><button class="modal-close" onclick="closeModal('modal-preview')">✕</button></div>
+  <div class="modal-body"><div id="invoice-preview-content"></div></div>
+  <div class="modal-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-preview')">Close</button>
+    <button class="btn btn-teal" onclick="printInvoice()">🖨 Print / PDF</button>
+  </div>
+</div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toasts"></div>
+
+<script src="BavanaSolutions.js"></script>
+</body>
+</html>
