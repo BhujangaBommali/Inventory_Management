@@ -6,11 +6,9 @@
 <title>BAVANA SOLUTIONS</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<link rel="icon">
+<link rel="icon" type="image/png" href="https://lh3.googleusercontent.com/d/1dd2NMYnijaX2p98tQLDbk3FaDhnWyMvg">
 </head>
 <body>
-
-<!-- ════ LOGIN OVERLAY ════ -->
 <div id="login-overlay">
 <div class="login-box">
 <div class="login-logo"><img src="https://lh3.googleusercontent.com/d/1dd2NMYnijaX2p98tQLDbk3FaDhnWyMvg" alt="Logo"></div>
@@ -35,15 +33,11 @@
 <div style="margin-top:18px;font-size:11px;color:var(--text3)">Staff can view &amp; add records · Admin can also delete</div>
 </div>
 </div>
-
-<!-- ════ LOADING OVERLAY ════ -->
 <div id="loading-overlay">
 <div class="load-spin"></div>
 <div class="load-title">Bavana Solutions</div>
 <div class="load-msg" id="loading-msg">Connecting to Google Sheets…</div>
 </div>
-
-<!-- ════ SIDEBAR ════ -->
 <aside class="sidebar">
 <div class="brand">
   <div class="brand-logo">
@@ -53,7 +47,6 @@
   <div class="brand-sub">Inventory &amp; Invoicing</div>
   <div style="display:flex;justify-content:center"><span class="gst-chip">✓ GST Compliant</span></div>
 </div>
-
 <div class="nav-section">
   <div class="nav-label">Main</div>
   <div class="nav-item active" onclick="showSection('dashboard',this)"><span class="nav-icon">🏠</span> Dashboard</div>
@@ -78,7 +71,6 @@
   <div class="nav-label">Settings</div>
   <div class="nav-item" onclick="showSection('settings',this)"><span class="nav-icon">⚙️</span> Company Setup</div>
 </div>-->
-
 <div class="sidebar-footer">
   <div class="gs-badge">
     <div class="gs-dot" id="gs-dot"></div>
@@ -89,8 +81,6 @@
   </div>
 </div>
 </aside>
-
-<!-- ════ MAIN ════ -->
 <main class="main">
 <div class="topbar">
   <div class="topbar-title" id="page-title">Dashboard <span>Overview</span></div>
@@ -105,8 +95,6 @@
 </div>
 
 <div class="content">
-
-  <!-- ── DASHBOARD ── -->
   <div class="section active" id="section-dashboard">
   <div class="stats-grid">
     <div class="stat-card gold"><div class="stat-icon">💰</div><div class="stat-value" id="stat-revenue">₹0</div><div class="stat-label">Total Revenue (Incl. GST)</div><div class="stat-change up" id="stat-revenue-change">↑ 0 invoices</div></div>
@@ -129,8 +117,6 @@
     </div>
   </div>
   </div>
-
-  <!-- ── PURCHASES ── -->
   <div class="section" id="section-purchases">
   <div class="toolbar">
     <div class="search-box"><span>🔍</span><input type="text" placeholder="Search purchases..." oninput="filterTable('pur-tbody',this.value)"></div>
@@ -144,8 +130,6 @@
     </table>
   </div>
   </div>
-
-  <!-- ── INVOICES ── -->
   <div class="section" id="section-invoices">
   <div class="toolbar">
     <div class="search-box"><span>🔍</span><input type="text" placeholder="Search invoices..." oninput="filterTable('inv-tbody',this.value)"></div>
@@ -165,8 +149,6 @@
     </table>
   </div>
   </div>
-
-  <!-- ── INVENTORY ── -->
   <div class="section" id="section-inventory">
   <div class="toolbar">
     <div class="search-box"><span>🔍</span><input type="text" placeholder="Search items..." oninput="filterTable('item-tbody',this.value)"></div>
@@ -183,12 +165,10 @@
     </table>
   </div>
   </div>
-
-  <!-- ── SUPPLIERS ── -->
   <div class="section" id="section-suppliers">
   <div class="toolbar">
     <div class="search-box"><span>🔍</span><input type="text" placeholder="Search suppliers..." oninput="filterTable('sup-tbody',this.value)"></div>
-    <button class="btn btn-gold" onclick="openModal('modal-supplier')">+ Add Supplier</button>
+    <button class="btn btn-gold" onclick="openNewSupplier()">+ Add Supplier</button>
     <button class="btn btn-outline btn-sm" onclick="exportData('suppliers')">↓ Export CSV</button>
   </div>
   <div class="card">
@@ -198,12 +178,10 @@
     </table>
   </div>
   </div>
-
-  <!-- ── CUSTOMERS ── -->
   <div class="section" id="section-customers">
   <div class="toolbar">
     <div class="search-box"><span>🔍</span><input type="text" placeholder="Search customers..." oninput="filterTable('cust-tbody',this.value)"></div>
-    <button class="btn btn-gold" onclick="openModal('modal-customer')">+ Add Customer</button>
+    <button class="btn btn-gold" onclick="openNewCustomer()">+ Add Customer</button>
     <button class="btn btn-outline btn-sm" onclick="exportData('customers')">↓ Export CSV</button>
   </div>
   <div class="card">
@@ -213,8 +191,6 @@
     </table>
   </div>
   </div>
-
-  <!-- ── GST SUMMARY ── -->
   <div class="section" id="section-gst">
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px">
     <div class="stat-card green"><div class="stat-icon">📤</div><div class="stat-value" id="gst-output">₹0</div><div class="stat-label">Output GST (Collected)</div></div>
@@ -235,8 +211,6 @@
     <button class="btn btn-teal" onclick="exportGSTR3B()">↓ Export GSTR-3B Summary</button>
   </div>
   </div>
-
-  <!-- ── REPORTS ── -->
   <div class="section" id="section-reports">
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px">
     <div class="card" style="padding:24px;cursor:pointer" onclick="generateReport('sales')"><div style="font-size:32px;margin-bottom:12px">📊</div><div style="font-weight:600;margin-bottom:4px">Sales Report</div><div style="font-size:12px;color:var(--text3)">Revenue, invoices &amp; customer trends</div></div>
@@ -255,8 +229,6 @@
     </div>
   </div>
   </div>
-
-  <!-- ── COMPANY SETTINGS ── -->
   <div class="section" id="section-settings">
   <div style="max-width:760px">
     <div class="card" style="margin-bottom:20px">
@@ -305,13 +277,8 @@
     <button class="btn btn-gold" onclick="saveCompanySettings()">💾 Save Company Settings</button>
   </div>
   </div>
-
-</div><!-- /content -->
+</div>
 </main>
-
-<!-- ════ MODALS ════ -->
-
-<!-- Fix Opening Stock Modal -->
 <div class="modal-overlay" id="modal-fix-opening">
 <div class="modal modal-lg">
   <div class="modal-header">
@@ -343,8 +310,6 @@
   </div>
 </div>
 </div>
-
-<!-- Purchase Modal -->
 <div class="modal-overlay" id="modal-purchase">
 <div class="modal modal-lg">
   <div class="modal-header"><div><div class="modal-title">Add Purchase Entry</div><div class="modal-sub">Record a new GST purchase from supplier</div></div><button class="modal-close" onclick="closeModal('modal-purchase')">✕</button></div>
@@ -389,8 +354,6 @@
   </div>
 </div>
 </div>
-
-<!-- Invoice Modal -->
 <div class="modal-overlay" id="modal-invoice">
 <div class="modal modal-xl">
   <div class="modal-header"><div><div class="modal-title">Create Tax Invoice</div><div class="modal-sub">Generate a GST-compliant tax invoice</div></div><button class="modal-close" onclick="closeModal('modal-invoice')">✕</button></div>
@@ -442,8 +405,6 @@
   </div>
 </div>
 </div>
-
-<!-- Inventory Item Modal -->
 <div class="modal-overlay" id="modal-item">
 <div class="modal modal-lg">
   <div class="modal-header"><div><div class="modal-title">Add Inventory Item</div><div class="modal-sub">Add a new product or service</div></div><button class="modal-close" onclick="closeModal('modal-item')">✕</button></div>
@@ -476,8 +437,6 @@
   </div>
 </div>
 </div>
-
-<!-- Supplier Modal -->
 <div class="modal-overlay" id="modal-supplier">
 <div class="modal modal-lg">
   <div class="modal-header"><div><div class="modal-title">Add Supplier</div><div class="modal-sub">Add a new supplier to your network</div></div><button class="modal-close" onclick="closeModal('modal-supplier')">✕</button></div>
@@ -504,8 +463,6 @@
   </div>
 </div>
 </div>
-
-<!-- Customer Modal -->
 <div class="modal-overlay" id="modal-customer">
 <div class="modal modal-lg">
   <div class="modal-header"><div><div class="modal-title">Add Customer</div><div class="modal-sub">Add a new customer to your records</div></div><button class="modal-close" onclick="closeModal('modal-customer')">✕</button></div>
@@ -532,8 +489,6 @@
   </div>
 </div>
 </div>
-
-<!-- Invoice Preview Modal -->
 <div class="modal-overlay" id="modal-preview">
 <div class="modal modal-xl">
   <div class="modal-header"><div><div class="modal-title">Tax Invoice Preview</div><div class="modal-sub">GST-compliant invoice ready to print</div></div><button class="modal-close" onclick="closeModal('modal-preview')">✕</button></div>
@@ -544,10 +499,7 @@
   </div>
 </div>
 </div>
-
-<!-- Toast container -->
 <div class="toast-container" id="toasts"></div>
-
 <script src="BavanaSolutions.js"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 document.addEventListener('contextmenu', e => e.preventDefault());
-document.onkeydown = e => {if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.keyCode === 85));return false;};
+document.onkeydown = e => {if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.keyCode === 85)) return false;};
 const CONFIG = {WEBAPP_URL: "https://script.google.com/macros/s/AKfycbzw5bNEiDcGcG1IgoUwwaUT755rI9GBNVEKY7pMH5cBpEw1KxT_nGD89e7ZrRMerV2k/exec"};
 const HARNATH_PASSWORD = 'harnath@bavana';
 let currentUser = null;
@@ -83,16 +83,24 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 function todayDMY() { return toDMY(new Date());}
 function toDMY(d) {
   const dd  = String(d.getDate()).padStart(2, '0');
-  const mmm = MONTHS[d.getMonth()];
+  const mm  = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  return `${dd}-${mmm}-${yyyy}`;
+  return `${dd}-${mm}-${yyyy}`;
 }
 function parseDMY(str) {
   if (!str) return null;
+  // ISO format: YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [y, m, d] = str.split('-');
     return new Date(+y, +m - 1, +d);
   }
+  // New numeric format: DD-MM-YYYY
+  const numMatch = str.match(/^(\d{1,2})-(\d{2})-(\d{4})$/);
+  if (numMatch) {
+    const d = +numMatch[1], m = +numMatch[2], y = +numMatch[3];
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return new Date(y, m - 1, d);
+  }
+  // Legacy format: DD-MMM-YYYY (backward compat for old stored data)
   const m = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
   if (!m) return null;
   const mi = MONTHS.findIndex(x => x.toLowerCase() === m[2].toLowerCase());
@@ -103,9 +111,9 @@ function isValidDMY(str) {
   return parseDMY(str) !== null;
 }
 function formatDateInput(input) {
-  let v = input.value.replace(/[^0-9A-Za-z\-]/g, '');
+  let v = input.value.replace(/[^0-9\-]/g, '');
   input.value = v;
-  if (v.length === 11) {
+  if (v.length === 10) {
     input.style.borderColor = isValidDMY(v) ? 'var(--green)' : 'var(--red)';
   } else {
     input.style.borderColor = '';
@@ -119,10 +127,14 @@ function addDays(dmyStr, n) {
 }
 function migrateDateField(val) {
   if (!val) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-    const d = parseDMY(val);
-    return d ? toDMY(d) : val;
-  }
+  // Already DD-MM-YYYY numeric format
+  if (/^\d{2}-\d{2}-\d{4}$/.test(val)) return val;
+  // Try parseDMY first (handles ISO YYYY-MM-DD and legacy DD-MMM-YYYY)
+  const d = parseDMY(val);
+  if (d && !isNaN(d)) return toDMY(d);
+  // Fallback: try native Date parsing (handles JS Date.toString() like 'Wed Apr 22 2026 ...')
+  const nd = new Date(val);
+  if (!isNaN(nd)) return toDMY(nd);
   return val;
 }
 let DB = {
@@ -360,7 +372,7 @@ async function savePurchase() {
   const purDate = document.getElementById('pur-date').value.trim();
   const btn     = document.getElementById('save-purchase-btn');
   if (!purDate || !isValidDMY(purDate)) {
-    showFieldError('pur-date', 'Enter a valid date in DD-MMM-YYYY format (e.g. 19-Apr-2026)');
+    showFieldError('pur-date', 'Enter a valid date in DD-MM-YYYY format (e.g. 19-04-2026)');
     btn.disabled = false; btn.innerHTML = 'Save Purchase';
     return;
   }
@@ -552,7 +564,7 @@ async function saveInvoice() {
 
   const invDateVal = document.getElementById('inv-date').value.trim();
   if (!invDateVal || !isValidDMY(invDateVal)) {
-    showFieldError('inv-date', 'Enter a valid date in DD-MMM-YYYY format (e.g. 19-Apr-2026)');
+    showFieldError('inv-date', 'Enter a valid date in DD-MM-YYYY format (e.g. 19-04-2026)');
     btn.disabled = false; btn.innerHTML = 'Save Invoice';
     return;
   }
@@ -782,12 +794,12 @@ function buildInvoiceHTML(inv, co, items, printMode = false) {
 
   const tableHead = printMode
     ? `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th></tr></thead>`
-    : `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th><th>Rate</th><th>GST%</th><th>Amount</th></tr></thead>`;
+    : `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th><th>Amount</th></tr></thead>`;
   const tableRows = items.map((item, i) => {
     if (printMode) {
       return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td><strong>${item.qty}</strong></td><td>${item.unit || '—'}</td></tr>`;
     }
-    return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td>${item.qty}</td><td>${item.unit || '—'}</td><td>₹${parseFloat(item.rate || 0).toFixed(2)}</td><td>${item.gst}%</td><td>₹${parseFloat(item.amount || 0).toFixed(2)}</td></tr>`;
+    return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td>${item.qty}</td><td>${item.unit || '—'}</td><td>₹${parseFloat(item.amount || 0).toFixed(2)}</td></tr>`;
   }).join('');
   const totalsBlock = printMode
     ? `<div class="inv-totals"><div class="inv-totals-box"><div class="inv-totals-row bold"><span>Grand Total</span><span>₹${grandTotal.toFixed(2)}</span></div></div></div>
@@ -1109,6 +1121,8 @@ async function saveOpeningStockFix() {
     showToast(`✓ Opening stock corrected for ${saved} item(s). Stock recomputed from source truth.`, 'success');
   }
 }
+let editingSupplierID = null;
+let editingCustomerID = null;
 async function saveSupplier() {
   const company = document.getElementById('sup-company').value.trim();
   if (!company) { showToast('Company name is required', 'error'); return; }
@@ -1119,8 +1133,9 @@ async function saveSupplier() {
   if (supGstin) document.getElementById('sup-gstin').value = supGstin;
   const btn = document.getElementById('save-supplier-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
+  const isEditingSup = !!editingSupplierID;
   const row = {
-    id: 'SUP-' + Date.now(),
+    id: editingSupplierID || 'SUP-' + Date.now(),
     company,
     contact: document.getElementById('sup-contact').value,
     email:   document.getElementById('sup-email').value,
@@ -1135,14 +1150,59 @@ async function saveSupplier() {
     createdAt: new Date().toISOString()
   };
   try {
-    await appendRow('suppliers', row);
-    DB.suppliers.push(row);
+    if (editingSupplierID) {
+      await updateRow('suppliers', editingSupplierID, row);
+      const idx = DB.suppliers.findIndex(s => s.id === editingSupplierID);
+      if (idx !== -1) DB.suppliers[idx] = row;
+      showToast('Supplier updated ✓', 'success');
+    } else {
+      await appendRow('suppliers', row);
+      DB.suppliers.push(row);
+      showToast('Supplier saved to Google Sheets ✓', 'success');
+    }
     renderSuppliers(); updateDashboard(); populateDropdowns();
     closeModal('modal-supplier');
-    showToast('Supplier saved to Google Sheets ✓', 'success');
+    editingSupplierID = null;
     document.getElementById('modal-supplier').querySelectorAll('input,textarea').forEach(el => el.value = '');
+    document.getElementById('save-supplier-btn').innerHTML = 'Save Supplier';
   } catch(e) { showToast('Save failed: ' + e.message, 'error'); }
-  btn.disabled = false; btn.innerHTML = 'Save Supplier';
+  btn.disabled = false; btn.innerHTML = isEditingSup ? 'Update Supplier' : 'Save Supplier';
+}
+function openNewSupplier() {
+  editingSupplierID = null;
+  document.getElementById('modal-supplier').querySelectorAll('input,textarea').forEach(el => el.value = '');
+  document.getElementById('save-supplier-btn').innerHTML = 'Save Supplier';
+  const titleEl = document.querySelector('#modal-supplier .modal-title');
+  if (titleEl) titleEl.textContent = 'Add Supplier';
+  openModal('modal-supplier');
+}
+function openNewCustomer() {
+  editingCustomerID = null;
+  document.getElementById('modal-customer').querySelectorAll('input,textarea').forEach(el => el.value = '');
+  document.getElementById('save-customer-btn').innerHTML = 'Save Customer';
+  const titleEl = document.querySelector('#modal-customer .modal-title');
+  if (titleEl) titleEl.textContent = 'Add Customer';
+  openModal('modal-customer');
+}
+function editSupplier(id) {
+  const s = DB.suppliers.find(x => x.id === id);
+  if (!s) return;
+  editingSupplierID = id;
+  document.getElementById('sup-company').value = s.company || '';
+  document.getElementById('sup-contact').value = s.contact || '';
+  document.getElementById('sup-email').value   = s.email   || '';
+  document.getElementById('sup-phone').value   = s.phone   || '';
+  document.getElementById('sup-gstin').value   = s.gstin   || '';
+  document.getElementById('sup-pan').value     = s.pan     || '';
+  document.getElementById('sup-state').value   = s.state   || '';
+  document.getElementById('sup-city').value    = s.city    || '';
+  document.getElementById('sup-address').value = s.address || '';
+  document.getElementById('sup-terms').value   = s.terms   || '';
+  document.getElementById('sup-bank').value    = s.bank    || '';
+  document.getElementById('save-supplier-btn').innerHTML = 'Update Supplier';
+  const titleEl = document.querySelector('#modal-supplier .modal-title');
+  if (titleEl) titleEl.textContent = 'Edit Supplier';
+  openModal('modal-supplier');
 }
 function renderSuppliers() {
   const tbody = document.getElementById('sup-tbody');
@@ -1159,7 +1219,10 @@ function renderSuppliers() {
       <td>${s.phone || '-'}</td>
       <td>${s.state || '-'}</td>
       <td><code>${s.gstin || '-'}</code></td>
-      <td><button class="btn btn-red btn-sm delete-gated" onclick="deleteSupplier('${s.id}')" style="display:${canDelete() ? '' : 'none'}">🗑</button></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-teal btn-sm" onclick="editSupplier('${s.id}')">✏</button>
+        <button class="btn btn-red btn-sm delete-gated" onclick="deleteSupplier('${s.id}')" style="display:${canDelete() ? '' : 'none'}">🗑</button>
+      </td>
     </tr>`).join('');
 }
 
@@ -1185,8 +1248,9 @@ async function saveCustomer() {
   if (custGstin) document.getElementById('cust-gstin').value = custGstin;
   const btn = document.getElementById('save-customer-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
+  const isEditingCust = !!editingCustomerID;
   const row = {
-    id: 'CUST-' + Date.now(),
+    id: editingCustomerID || 'CUST-' + Date.now(),
     name,
     type:    document.getElementById('cust-type').value,
     email:   document.getElementById('cust-email').value,
@@ -1201,14 +1265,43 @@ async function saveCustomer() {
     createdAt: new Date().toISOString()
   };
   try {
-    await appendRow('customers', row);
-    DB.customers.push(row);
+    if (editingCustomerID) {
+      await updateRow('customers', editingCustomerID, row);
+      const idx = DB.customers.findIndex(c => c.id === editingCustomerID);
+      if (idx !== -1) DB.customers[idx] = row;
+      showToast('Customer updated ✓', 'success');
+    } else {
+      await appendRow('customers', row);
+      DB.customers.push(row);
+      showToast('Customer saved to Google Sheets ✓', 'success');
+    }
     renderCustomers(); updateDashboard(); populateDropdowns();
     closeModal('modal-customer');
-    showToast('Customer saved to Google Sheets ✓', 'success');
+    editingCustomerID = null;
     document.getElementById('modal-customer').querySelectorAll('input,textarea').forEach(el => el.value = '');
+    document.getElementById('save-customer-btn').innerHTML = 'Save Customer';
   } catch(e) { showToast('Save failed: ' + e.message, 'error'); }
-  btn.disabled = false; btn.innerHTML = 'Save Customer';
+  btn.disabled = false; btn.innerHTML = isEditingCust ? 'Update Customer' : 'Save Customer';
+}
+function editCustomer(id) {
+  const c = DB.customers.find(x => x.id === id);
+  if (!c) return;
+  editingCustomerID = id;
+  document.getElementById('cust-name').value    = c.name    || '';
+  document.getElementById('cust-type').value    = c.type    || 'B2C';
+  document.getElementById('cust-email').value   = c.email   || '';
+  document.getElementById('cust-phone').value   = c.phone   || '';
+  document.getElementById('cust-gstin').value   = c.gstin   || '';
+  document.getElementById('cust-pan').value     = c.pan     || '';
+  document.getElementById('cust-state').value   = c.state   || '';
+  document.getElementById('cust-city').value    = c.city    || '';
+  document.getElementById('cust-address').value = c.address || '';
+  document.getElementById('cust-credit').value  = c.credit  || '';
+  document.getElementById('cust-terms').value   = c.terms   || '';
+  document.getElementById('save-customer-btn').innerHTML = 'Update Customer';
+  const titleEl = document.querySelector('#modal-customer .modal-title');
+  if (titleEl) titleEl.textContent = 'Edit Customer';
+  openModal('modal-customer');
 }
 function renderCustomers() {
   const tbody = document.getElementById('cust-tbody');
@@ -1225,7 +1318,10 @@ function renderCustomers() {
       <td>${c.state || '-'}</td>
       <td><code>${c.gstin || 'Unregistered'}</code></td>
       <td><span class="badge ${c.type === 'B2B' ? 'badge-blue' : 'badge-teal'}">${c.type || 'B2C'}</span></td>
-      <td><button class="btn btn-red btn-sm delete-gated" onclick="deleteCustomer('${c.id}')" style="display:${canDelete() ? '' : 'none'}">🗑</button></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-teal btn-sm" onclick="editCustomer('${c.id}')">✏</button>
+        <button class="btn btn-red btn-sm delete-gated" onclick="deleteCustomer('${c.id}')" style="display:${canDelete() ? '' : 'none'}">🗑</button>
+      </td>
     </tr>`).join('');
 }
 
