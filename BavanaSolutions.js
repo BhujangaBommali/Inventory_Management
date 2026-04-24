@@ -366,7 +366,7 @@ async function savePurchase() {
   const item     = document.getElementById('pur-item').value;
   if (!supplier || !item) { showToast('Please select supplier and item', 'error'); return; }
 
-  const qty = +document.getElementById('pur-qty').value || 0;
+  const qty = parseFloat(document.getElementById('pur-qty').value) || 0;
   if (qty <= 0) { showFieldError('pur-qty', 'Quantity must be greater than 0'); return; }
 
   const purDate = document.getElementById('pur-date').value.trim();
@@ -387,7 +387,7 @@ async function savePurchase() {
   const row = {
     id: 'PUR-' + Date.now(),
     po: document.getElementById('pur-po').value,
-    date: purDate, supplier, item, qty,
+    date: purDate, supplier, item, qty: qty.toString(),
     taxable, gstAmt,
     cgst: type === 'intra' ? (gstAmt / 2).toFixed(2) : 0,
     sgst: type === 'intra' ? (gstAmt / 2).toFixed(2) : 0,
@@ -469,6 +469,26 @@ function filterInvoices(status, el) {
   });
 }
 
+// Units that support fractional/decimal quantities
+const FRACTIONAL_UNITS = ['kg', 'kgs', 'kilogram', 'kilograms', 'lt', 'lts', 'ltr', 'ltrs', 'litre', 'litres', 'liter', 'liters', 'g', 'gm', 'gms', 'gram', 'grams', 'ml', 'millilitre', 'milliliter', 'ton', 'tons', 'tonne', 'tonnes', 'quintal', 'quintals'];
+
+function isFractionalUnit(unit) {
+  return unit && FRACTIONAL_UNITS.includes(unit.trim().toLowerCase());
+}
+
+function setQtyInputMode(qtyInput, unit) {
+  if (isFractionalUnit(unit)) {
+    qtyInput.step = '0.001';
+    qtyInput.title = 'Decimal quantities allowed for ' + unit;
+  } else {
+    qtyInput.step = '1';
+    // Snap to integer if a decimal was previously entered
+    const val = parseFloat(qtyInput.value);
+    if (!isNaN(val)) qtyInput.value = Math.round(val);
+    qtyInput.title = 'Whole numbers only for ' + (unit || 'Pcs/Nos');
+  }
+}
+
 function addInvoiceRow() {
   const tbody  = document.getElementById('inv-line-items');
   const rowNum = tbody.rows.length + 1;
@@ -481,8 +501,8 @@ function addInvoiceRow() {
     <td><select onchange="autofillInvoiceRow(this)" style="min-width:140px"><option value="">— Select —</option>${itemOpts}</select></td>
     <td><input placeholder="HSN/SAC"></td>
     <td><input placeholder="Description"></td>
-    <td><input type="number" value="1" oninput="recalcInvoice()"></td>
-    <td><input placeholder="Pcs"></td>
+    <td><input type="number" value="1" step="1" oninput="validateQtyInput(this)"></td>
+    <td><input placeholder="Pcs" oninput="onUnitChange(this)"></td>
     <td><input type="number" value="0" step="0.01" oninput="recalcInvoice()"></td>
     <td><input type="number" value="18" oninput="recalcInvoice()"></td>
     <td class="amt" style="color:var(--gold)">0.00</td>
@@ -490,13 +510,84 @@ function addInvoiceRow() {
   tbody.appendChild(row);
 }
 
+function getAvailableStock(productName) {
+  const stockItem = DB.items.find(i => i.name === productName);
+  if (!stockItem) return null;
+  const opening   = parseFloat(stockItem.openingStock ?? stockItem.stock ?? 0);
+  const purchased = DB.purchases
+    .filter(p => p.item === productName)
+    .reduce((s, p) => { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }, 0);
+  let alreadyInvoiced = 0;
+  DB.invoices.forEach(inv => {
+    try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === productName) { const q = parseFloat(li.qty); alreadyInvoiced += isNaN(q) ? 0 : q; } }); } catch(e){}
+  });
+  return Math.max(0, opening + purchased - alreadyInvoiced);
+}
+
+function validateQtyInput(qtyInput) {
+  const row         = qtyInput.closest('tr');
+  const unitVal     = row ? row.children[5].querySelector('input').value : '';
+  const productName = row ? row.children[1].querySelector('select').value : '';
+
+  // Step 1: Snap decimals for non-fractional units
+  if (!isFractionalUnit(unitVal)) {
+    const raw = parseFloat(qtyInput.value);
+    if (!isNaN(raw) && raw !== Math.round(raw)) {
+      const snapped = Math.round(raw);
+      qtyInput.value = snapped;
+      showToast(`⚠ "${unitVal || 'Nos/Pcs'}" cannot be issued in decimals — rounded to ${snapped}`, 'error');
+    }
+  }
+
+  // Step 2: Live stock check — cap qty and warn if over available stock
+  if (productName) {
+    const available = getAvailableStock(productName);
+    if (available !== null) {
+      const entered = parseFloat(qtyInput.value) || 0;
+      if (entered > available) {
+        qtyInput.value = available;
+        qtyInput.style.borderColor = 'var(--red)';
+        qtyInput.style.boxShadow   = '0 0 0 3px rgba(255,107,107,0.25)';
+        showToast(`⚠ Only ${available} units available for "${productName}" — quantity capped`, 'error');
+      } else {
+        qtyInput.style.borderColor = entered > 0 ? 'var(--green)' : '';
+        qtyInput.style.boxShadow   = '';
+      }
+    }
+  }
+
+  recalcInvoice();
+}
+
+function onUnitChange(unitInput) {
+  const row = unitInput.closest('tr');
+  const qtyInput = row.children[4].querySelector('input');
+  setQtyInputMode(qtyInput, unitInput.value);
+  recalcInvoice();
+}
+
 function autofillInvoiceRow(sel) {
-  const opt = sel.selectedOptions[0];
-  const row = sel.closest('tr');
+  const opt      = sel.selectedOptions[0];
+  const row      = sel.closest('tr');
+  const unit     = opt.dataset.unit || 'Pcs';
+  const qtyInput = row.children[4].querySelector('input');
   row.children[2].querySelector('input').value = opt.dataset.hsn  || '';
   row.children[6].querySelector('input').value = opt.dataset.rate || 0;
   row.children[7].querySelector('input').value = opt.dataset.gst  || 18;
-  row.children[5].querySelector('input').value = opt.dataset.unit || 'Pcs';
+  row.children[5].querySelector('input').value = unit;
+  setQtyInputMode(qtyInput, unit);
+
+  // Show available stock as max constraint and tooltip hint
+  const productName = opt.value;
+  if (productName) {
+    const available = getAvailableStock(productName);
+    if (available !== null) {
+      qtyInput.max   = available;
+      qtyInput.title = `Available stock: ${available} ${unit}`;
+      qtyInput.placeholder = `Max: ${available}`;
+    }
+  }
+
   recalcInvoice();
 }
 
@@ -517,7 +608,14 @@ function recalcInvoice() {
   const gstType = document.getElementById('inv-gst-type').value;
 
   document.querySelectorAll('#inv-line-items tr').forEach(r => {
-    const qty     = +r.children[4].querySelector('input').value || 0;
+    const qtyInput = r.children[4].querySelector('input');
+    const unitVal  = r.children[5].querySelector('input').value;
+    const rawQty   = parseFloat(qtyInput.value) || 0;
+    // Snap to integer for non-fractional units before any calculation
+    const qty      = isFractionalUnit(unitVal) ? rawQty : Math.round(rawQty);
+    if (!isFractionalUnit(unitVal) && rawQty !== qty) {
+      qtyInput.value = qty; // update the field immediately
+    }
     const rate    = +r.children[6].querySelector('input').value || 0;
     const gstRate = +r.children[7].querySelector('input').value || 0;
     const amt     = qty * rate;
@@ -571,12 +669,15 @@ async function saveInvoice() {
 
   const items = [];
   document.querySelectorAll('#inv-line-items tr').forEach(r => {
+    const rawUnit = r.children[5].querySelector('input').value;
+    const rawQty  = parseFloat(r.children[4].querySelector('input').value) || 0;
+    const qty     = isFractionalUnit(rawUnit) ? rawQty : Math.round(rawQty);
     items.push({
       product: r.children[1].querySelector('select').value,
       hsn:     r.children[2].querySelector('input').value,
       desc:    r.children[3].querySelector('input').value,
-      qty:     r.children[4].querySelector('input').value,
-      unit:    r.children[5].querySelector('input').value,
+      qty:     qty.toString(),
+      unit:    rawUnit,
       rate:    r.children[6].querySelector('input').value,
       gst:     r.children[7].querySelector('input').value,
       amount:  r.querySelector('.amt').textContent
@@ -586,21 +687,12 @@ async function saveInvoice() {
   // Stock availability check
   for (const lineItem of items) {
     if (!lineItem.product) continue;
-    const stockItem = DB.items.find(i => i.name === lineItem.product);
-    if (stockItem) {
-      const opening   = parseFloat(stockItem.openingStock ?? stockItem.stock ?? 0);
-      const purchased = DB.purchases
-        .filter(p => p.item === lineItem.product)
-        .reduce((s, p) => s + parseFloat(p.qty || 0), 0);
-      let alreadyInvoiced = 0;
-      DB.invoices.forEach(inv => {
-        try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === lineItem.product) alreadyInvoiced += parseFloat(li.qty || 0); }); } catch(e){}
-      });
-      const available = Math.max(0, opening + purchased - alreadyInvoiced);
-      const requested = parseFloat(lineItem.qty || 0);
-      if (requested > available) {
+    const available = getAvailableStock(lineItem.product);
+    if (available !== null) {
+      const requestedQty = parseFloat(lineItem.qty) || 0;
+      if (requestedQty > available) {
         btn.disabled = false; btn.innerHTML = 'Save Invoice';
-        showToast(`⚠ Insufficient stock for "${lineItem.product}" — Available: ${available}, Requested: ${requested}`, 'error');
+        showToast(`⚠ Insufficient stock for "${lineItem.product}" — Available: ${available}, Requested: ${requestedQty}`, 'error');
         return;
       }
     }
@@ -796,10 +888,11 @@ function buildInvoiceHTML(inv, co, items, printMode = false) {
     ? `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th></tr></thead>`
     : `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th><th>Amount</th></tr></thead>`;
   const tableRows = items.map((item, i) => {
+    const qtyRaw = parseFloat(item.qty); const qtyFormatted = (isNaN(qtyRaw) ? 0 : qtyRaw).toFixed(3);
     if (printMode) {
-      return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td><strong>${item.qty}</strong></td><td>${item.unit || '—'}</td></tr>`;
+      return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td><strong>${qtyFormatted}</strong></td><td>${item.unit || '—'}</td></tr>`;
     }
-    return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td>${item.qty}</td><td>${item.unit || '—'}</td><td>₹${parseFloat(item.amount || 0).toFixed(2)}</td></tr>`;
+    return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td>${qtyFormatted}</td><td>${item.unit || '—'}</td><td>₹${parseFloat(item.amount || 0).toFixed(2)}</td></tr>`;
   }).join('');
   const totalsBlock = printMode
     ? `<div class="inv-totals"><div class="inv-totals-box"><div class="inv-totals-row bold"><span>Grand Total</span><span>₹${grandTotal.toFixed(2)}</span></div></div></div>
@@ -826,11 +919,10 @@ function buildInvoiceHTML(inv, co, items, printMode = false) {
           </div>
         </div>
         <div style="text-align:right">
-          <div class="inv-badge">ISSUE NOTE</div>
+          <div class="inv-badge">DELIVERY NOTE</div>
           <div style="margin-top:10px;font-size:13px;color:#555">
-            Issue No #: <strong>${inv.invNum || '—'}</strong><br>
+            #: <strong>${inv.invNum || '—'}</strong><br>
             Date: ${migrateDateField(inv.date) || '—'}<br>
-            Due: ${migrateDateField(inv.dueDate) || '—'}
           </div>
         </div>
       </div>
@@ -862,9 +954,14 @@ function buildInvoiceHTML(inv, co, items, printMode = false) {
         A/C No: ${co.accno || ''} | IFSC: ${co.ifsc || ''} | Type: ${co.acctype || ''}<br>
         UPI: ${co.upi || ''}
       </div>` : ''}
-      <div class="inv-footer">${inv.notes || ''}</div>
-      <div class="inv-seal">
-        Authorised Signatory<br>
+      <div class="inv-footer">
+  ${inv.notes || ''}<br>
+  <div style="display:flex; justify-content:space-between; margin-top:30px;">
+    <div style="text-align:left;">Receiver Signature</div>
+    <div style="text-align:center;">Prepared By</div>
+  </div>
+</div>
+      <div class="inv-seal">Authorised Signatory<br>
         <strong>${co.name || 'Bavana Solutions'}</strong><br>
         <small>This is a computer generated invoice</small>
       </div>
@@ -932,10 +1029,10 @@ async function recomputeStock(itemName) {
   const opening   = parseFloat(item.openingStock ?? item.stock ?? 0);
   const purchased = DB.purchases
     .filter(p => p.item === itemName)
-    .reduce((s, p) => s + parseFloat(p.qty || 0), 0);
+    .reduce((s, p) => { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }, 0);
   let invoiced = 0;
   DB.invoices.forEach(inv => {
-    try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === itemName) invoiced += parseFloat(li.qty || 0); }); } catch(e){}
+    try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === itemName) { const q = parseFloat(li.qty); invoiced += isNaN(q) ? 0 : q; } }); } catch(e){}
   });
   const newStock = Math.max(0, opening + purchased - invoiced);
   item.stock = newStock.toString();
@@ -990,11 +1087,11 @@ function renderItems() {
 
   const purchasedMap = {};
   DB.purchases.forEach(p => {
-    if (p.item) purchasedMap[p.item] = (purchasedMap[p.item] || 0) + parseFloat(p.qty || 0);
+    if (p.item) { const pq = parseFloat(p.qty); purchasedMap[p.item] = (purchasedMap[p.item] || 0) + (isNaN(pq) ? 0 : pq); }
   });
   const invoicedMap = {};
   DB.invoices.forEach(inv => {
-    try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product) invoicedMap[li.product] = (invoicedMap[li.product] || 0) + parseFloat(li.qty || 0); }); } catch(e){}
+    try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product) { const iq = parseFloat(li.qty); invoicedMap[li.product] = (invoicedMap[li.product] || 0) + (isNaN(iq) ? 0 : iq); } }); } catch(e){}
   });
 
   tbody.innerHTML = DB.items.slice().reverse().map(i => {
