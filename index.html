@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BAVANA SOLUTIONS</title>
+<title>Bavana Solutions — Inventory &amp; Invoicing</title>
+<meta name="description" content="Bavana Solutions — GST-Compliant Inventory & Invoicing Management">
+<meta name="theme-color" content="#0f1219">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" type="image/png" href="https://lh3.googleusercontent.com/d/1dd2NMYnijaX2p98tQLDbk3FaDhnWyMvg">
@@ -96,7 +98,7 @@
     <div class="sync-dot" id="sync-dot"></div>
     <span id="sync-label">Synced</span>
   </div>
-  <button class="btn btn-outline btn-sm" onclick="refreshAllData()">⟳ Refresh</button>
+  <button class="btn btn-outline btn-sm" onclick="refreshAllData()" title="Refresh data from Google Sheets">⟳ Refresh</button>
   <span class="user-chip" id="user-chip" onclick="logoutUser()" title="Click to log out">👤 <span id="user-chip-label">Staff</span></span>
   <button class="btn btn-gold" id="topbar-action" onclick="handleTopAction()">+ New Invoice</button>
   </div>
@@ -318,8 +320,8 @@
   </div>
 </div>
 </div>
-<div class="modal-overlay" id="modal-purchase">
-<div class="modal modal-lg">
+<div class="modal-overlay modal-overlay-fs" id="modal-purchase">
+<div class="modal modal-fullscreen">
   <div class="modal-header"><div><div class="modal-title">Add Purchase Entry</div><div class="modal-sub">Record a new GST purchase from supplier</div></div><button class="modal-close" onclick="closeModal('modal-purchase')">✕</button></div>
   <div class="modal-body">
     <div class="form-grid" style="margin-bottom:16px">
@@ -343,8 +345,8 @@
       <div class="form-group"><label>Total GST (₹)</label><input type="text" id="pur-gst-amt" readonly style="color:var(--green)"></div>
       <div class="form-group"><label>Total Amount (₹)</label><input type="text" id="pur-total" readonly style="color:var(--gold);font-weight:700"></div>
       <div class="form-group"><label>Payment Status</label><select id="pur-status"><option>Paid</option><option>Pending</option><option>Partial</option></select></div>
-      <div class="form-group"><label>Supplier Invoice #</label><input type="text" id="pur-billno" placeholder="SUP-INV-001"></div>
-      <div class="form-group"><label>Bill Date</label><input type="text" id="pur-billdate" placeholder="DD-MMM-YYYY" maxlength="11" oninput="formatDateInput(this)"></div>
+      <div class="form-group"><label>Supplier Invoice # <span class="req">*</span></label><input type="text" id="pur-billno" placeholder="SUP-INV-001"></div>
+      <div class="form-group"><label>Supplier Invoice Date <span class="req">*</span></label><input type="text" id="pur-billdate" placeholder="DD-MM-YYYY" maxlength="11" oninput="formatDateInput(this)"></div>
       <div class="form-group full"><label>Notes</label><textarea id="pur-notes" placeholder="Additional notes..."></textarea></div>
     </div>
     <div id="pur-gst-breakdown" class="gst-summary-box" style="display:none">
@@ -362,8 +364,8 @@
   </div>
 </div>
 </div>
-<div class="modal-overlay" id="modal-invoice">
-<div class="modal modal-xl">
+<div class="modal-overlay modal-overlay-fs" id="modal-invoice">
+<div class="modal modal-fullscreen">
   <div class="modal-header"><div><div class="modal-title">Create Tax Invoice</div><div class="modal-sub">Generate a GST-compliant tax invoice</div></div><button class="modal-close" onclick="closeModal('modal-invoice')">✕</button></div>
   <div class="modal-body">
     <div class="form-grid cols-4" style="margin-bottom:16px">
@@ -526,6 +528,6 @@ document.querySelectorAll('.nav-item').forEach(function(el){
   });
 });
 </script>
-<script src="stylesheet.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
