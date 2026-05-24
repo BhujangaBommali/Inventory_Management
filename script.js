@@ -773,11 +773,11 @@ return `
 <div class="invoice-preview">
 <div class="inv-header">
 <div>
-<div class="inv-company">${co.name || 'Bavana Solutions'}</div>
+<div class="inv-company">${co.name || 'Kiran Agency'}</div>
 <div class="inv-company-sub">
-		${co.address || ''}<br>
-GSTIN: ${co.gstin || '—'} ; STATE :<b>VISAKHAPATNAM - </b>530007<br>
-		PHONE : ${co.phone || ''} ; Email :${co.email || ''}
+		${co.address || '#39-24-22/4, GROUND FLOOR, NARASIMHANAGAR'}<br>
+GSTIN: ${co.gstin || '37AHSPT4698Q1ZQ'} ; STATE :<b>VISAKHAPATNAM - </b>530007<br>
+		PHONE : ${co.phone || '8886441199'} ; Email :${co.email || 'harnathbabu@gmail.com'}
 </div>
 </div>
 <div style="text-align:right">
