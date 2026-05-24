@@ -1425,7 +1425,877 @@ a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
 a.download = 'GSTR3B_' + new Date().toISOString().split('T')[0] + '.csv';
 a.click();showToast('GSTR-3B exported ✓', 'success');}
 function exportAll() {['purchases','invoices','inventory','suppliers','customers'].forEach((t, i) => setTimeout(() => exportData(t), i * 300));}
+/* ═══════════════════════════════════════════════════════════
+   REPORTS ENGINE — Full implementation
+   ═══════════════════════════════════════════════════════════ */
+
 function generateReport(type) {
-showToast(`Generating ${type} report…`, 'info');
+  showToast(`Generating ${type} report…`, 'info');
+  const container = document.getElementById('report-output');
+  if (!container) return;
+  container.innerHTML = '';
+  container.style.display = 'block';
+
+  switch (type) {
+    case 'sales':     renderSalesReport(container);     break;
+    case 'purchases': renderPurchasesReport(container); break;
+    case 'inventory': renderInventoryReport(container); break;
+    case 'pl':        renderPLReport(container);        break;
+    case 'monthly':   renderMonthlyReport(container);   break;
+  }
+
+  // Scroll into view
+  container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── Shared helpers ────────────────────────────────────────── */
+function fmtRs(n) { return '₹' + parseFloat(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function reportHeader(title, subtitle, icon) {
+  return `<div class="rpt-header">
+    <div class="rpt-header-icon">${icon}</div>
+    <div>
+      <div class="rpt-title">${title}</div>
+      <div class="rpt-subtitle">${subtitle}</div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="document.getElementById('report-output').style.display='none'">✕ Close</button>
+  </div>`;
+}
+function reportKPI(label, value, color, sub) {
+  return `<div class="rpt-kpi" style="--kpi-color:${color}">
+    <div class="rpt-kpi-value">${value}</div>
+    <div class="rpt-kpi-label">${label}</div>
+    ${sub ? `<div class="rpt-kpi-sub">${sub}</div>` : ''}
+  </div>`;
+}
+function reportTable(headers, rows, emptyMsg) {
+  if (!rows.length) return `<div class="empty-state"><div class="empty-icon">📋</div><h3>${emptyMsg || 'No data available'}</h3></div>`;
+  return `<div class="rpt-table-wrap"><table class="rpt-table">
+    <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.join('')}</tbody>
+  </table></div>`;
+}
+
+/* ── SALES REPORT — Customer Dropdown + Month-on-Month ──────── */
+function renderSalesReport(container) {
+  // Collect unique customers who have at least one invoice
+  const custNames = [...new Set(DB.invoices.map(i => i.customer).filter(Boolean))].sort();
+
+  container.innerHTML = `
+    ${reportHeader('Sales Report', 'Customer-wise · Month-on-Month Consumption', '📊')}
+
+    <div class="rpt-customer-selector">
+      <div class="rpt-cs-label">Select Customer</div>
+      <div class="rpt-cs-row">
+        <div class="rpt-cs-select-wrap">
+          <select id="rpt-cust-dropdown" onchange="onSalesCustomerChange()">
+            <option value="">— All Customers —</option>
+            ${custNames.map(n => `<option value="${n}">${n}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-gold btn-sm" onclick="exportSalesReportCSV()">↓ Export CSV</button>
+      </div>
+    </div>
+
+    <div id="rpt-sales-body"></div>`;
+
+  // Render with "All Customers" by default
+  renderSalesBody('');
+}
+
+function onSalesCustomerChange() {
+  const sel = document.getElementById('rpt-cust-dropdown');
+  renderSalesBody(sel ? sel.value : '');
+}
+
+function renderSalesBody(selectedCustomer) {
+  const body = document.getElementById('rpt-sales-body');
+  if (!body) return;
+
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function getMonthKey(dateStr) {
+    const d = parseDMY(dateStr);
+    if (!d || isNaN(d)) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  function getMonthLabel(key) {
+    const [y, m] = key.split('-');
+    return `${MONTHS_FULL[+m - 1]} ${y}`;
+  }
+  function fmtQty(q) { return q % 1 === 0 ? q : parseFloat(q).toFixed(3); }
+
+  // Filter invoices
+  const invs = selectedCustomer
+    ? DB.invoices.filter(i => i.customer === selectedCustomer)
+    : DB.invoices;
+
+  if (!invs.length) {
+    body.innerHTML = `<div class="rpt-empty-body"><div class="empty-state"><div class="empty-icon">📊</div><h3>No invoices found${selectedCustomer ? ` for "${selectedCustomer}"` : ''}</h3></div></div>`;
+    return;
+  }
+
+  // ── KPIs ──────────────────────────────────────────────────
+  const totalRevenue = invs.reduce((s, i) => s + parseFloat(i.total   || 0), 0);
+  const totalTaxable = invs.reduce((s, i) => s + parseFloat(i.taxable || 0), 0);
+  const totalGST     = invs.reduce((s, i) => s + parseFloat(i.gst     || 0), 0);
+  const paid         = invs.filter(i => i.status === 'Paid');
+  const pending      = invs.filter(i => i.status === 'Pending');
+
+  // ── Build month map + overall item map ────────────────────
+  const monthMap   = {};  // { monthKey: { invoices, revenue, taxable, gst, items: { prod: {qty,amount,unit} } } }
+  const overallItems = {}; // { prod: { qty, amount, unit, months: { monthKey: {qty,amount} } } }
+
+  invs.forEach(inv => {
+    const k = getMonthKey(inv.date);
+    if (!k) return;
+    if (!monthMap[k]) monthMap[k] = { invoices: [], revenue: 0, taxable: 0, gst: 0, items: {} };
+    monthMap[k].invoices.push(inv);
+    monthMap[k].revenue  += parseFloat(inv.total   || 0);
+    monthMap[k].taxable  += parseFloat(inv.taxable || 0);
+    monthMap[k].gst      += parseFloat(inv.gst     || 0);
+
+    try {
+      JSON.parse(inv.items || '[]').forEach(li => {
+        const prod = li.product || 'Unknown';
+        const qty  = parseFloat(li.qty    || 0);
+        const amt  = parseFloat(li.amount || 0);
+        const unit = li.unit || '';
+
+        // per-month items
+        if (!monthMap[k].items[prod]) monthMap[k].items[prod] = { qty: 0, amount: 0, unit };
+        monthMap[k].items[prod].qty    += qty;
+        monthMap[k].items[prod].amount += amt;
+
+        // overall items
+        if (!overallItems[prod]) overallItems[prod] = { qty: 0, amount: 0, unit, months: {} };
+        overallItems[prod].qty    += qty;
+        overallItems[prod].amount += amt;
+        if (!overallItems[prod].months[k]) overallItems[prod].months[k] = { qty: 0, amount: 0 };
+        overallItems[prod].months[k].qty    += qty;
+        overallItems[prod].months[k].amount += amt;
+      });
+    } catch(e){}
+  });
+
+  const sortedKeys = Object.keys(monthMap).sort();
+
+  // ── Month-on-Month summary rows ───────────────────────────
+  const momRows = sortedKeys.map((k, idx) => {
+    const d    = monthMap[k];
+    const prev = idx > 0 ? monthMap[sortedKeys[idx - 1]] : null;
+    const growth = prev && prev.revenue > 0
+      ? ((d.revenue - prev.revenue) / prev.revenue * 100).toFixed(1)
+      : null;
+    const growthBadge = growth !== null
+      ? `<span class="rpt-growth ${+growth >= 0 ? 'up' : 'down'}">${+growth >= 0 ? '▲' : '▼'} ${Math.abs(growth)}%</span>`
+      : `<span style="font-size:10px;color:var(--text3)">—</span>`;
+    return `<tr>
+      <td><strong>${getMonthLabel(k)}</strong></td>
+      <td>${d.invoices.length}</td>
+      <td>${fmtRs(d.taxable)}</td>
+      <td style="color:var(--green)">${fmtRs(d.gst)}</td>
+      <td style="color:var(--gold);font-weight:700">${fmtRs(d.revenue)}</td>
+      <td>${growthBadge}</td>
+    </tr>`;
+  });
+
+  // ── Overall item-wise summary table ───────────────────────
+  const overallItemRows = Object.entries(overallItems)
+    .sort((a, b) => b[1].amount - a[1].amount)
+    .map(([prod, v], idx) => {
+      const share = totalTaxable > 0 ? (v.amount / totalTaxable * 100).toFixed(1) : 0;
+      return `<tr>
+        <td>${idx + 1}</td>
+        <td><strong>${prod}</strong></td>
+        <td style="color:var(--text3);font-size:11px">${v.unit || '—'}</td>
+        <td style="color:var(--teal);font-weight:600">${fmtQty(v.qty)}</td>
+        <td style="color:var(--gold);font-weight:700">${fmtRs(v.amount)}</td>
+        <td>
+          <div class="rpt-bar-wrap">
+            <div class="rpt-bar-fill" style="width:${Math.min(100, share)}%"></div>
+            <span class="rpt-bar-label">${share}%</span>
+          </div>
+        </td>
+      </tr>`;
+    });
+
+  // ── Item × Month pivot table ──────────────────────────────
+  // Columns: Item | Unit | Total Qty | Total Amt | [month1 amt] | [month2 amt] ...
+  const pivotItemsSorted = Object.entries(overallItems).sort((a, b) => b[1].amount - a[1].amount);
+  const pivotMonthHeaders = sortedKeys.map(k => `<th class="rpt-pivot-month">${getMonthLabel(k)}<br><span style="font-size:9px;font-weight:400;color:var(--text3)">Qty / Amt</span></th>`).join('');
+  const pivotRows = pivotItemsSorted.map(([prod, v]) => {
+    const monthCells = sortedKeys.map(k => {
+      const m = v.months[k];
+      if (!m) return `<td class="rpt-pivot-cell empty">—</td>`;
+      return `<td class="rpt-pivot-cell">
+        <span class="rpt-pivot-qty">${fmtQty(m.qty)} ${v.unit || ''}</span>
+        <span class="rpt-pivot-amt">${fmtRs(m.amount)}</span>
+      </td>`;
+    }).join('');
+    return `<tr>
+      <td><strong>${prod}</strong></td>
+      <td style="color:var(--text3);font-size:11px">${v.unit || '—'}</td>
+      <td style="color:var(--teal);font-weight:700">${fmtQty(v.qty)}</td>
+      <td style="color:var(--gold);font-weight:700">${fmtRs(v.amount)}</td>
+      ${monthCells}
+    </tr>`;
+  }).join('');
+
+  // Pivot totals row
+  const pivotTotalCells = sortedKeys.map(k => {
+    const d = monthMap[k];
+    return `<td class="rpt-pivot-cell" style="font-weight:700;color:var(--gold)">${fmtRs(d.revenue)}</td>`;
+  }).join('');
+
+  // ── Per-month accordion blocks ────────────────────────────
+  const monthBlocks = sortedKeys.map(k => {
+    const d = monthMap[k];
+    const itemEntries = Object.entries(d.items).sort((a, b) => b[1].amount - a[1].amount);
+
+    const itemRows = itemEntries.map(([prod, v]) =>
+      `<tr>
+        <td><strong>${prod}</strong></td>
+        <td style="color:var(--text3);font-size:11px">${v.unit || '—'}</td>
+        <td style="color:var(--teal);font-weight:600">${fmtQty(v.qty)}</td>
+        <td style="color:var(--gold);font-weight:700">${fmtRs(v.amount)}</td>
+      </tr>`
+    ).join('');
+
+    const custCol  = !selectedCustomer ? '<th>Customer</th>' : '';
+    const custCell = !selectedCustomer ? inv => `<td>${inv.customer || '-'}</td>` : () => '';
+    const invRows  = d.invoices.map(inv =>
+      `<tr>
+        <td><strong>${inv.invNum || inv.id}</strong></td>
+        <td>${migrateDateField(inv.date) || '-'}</td>
+        ${custCell(inv)}
+        <td>${fmtRs(inv.taxable)}</td>
+        <td style="color:var(--green)">${fmtRs(inv.gst)}</td>
+        <td style="color:var(--gold);font-weight:700">${fmtRs(inv.total)}</td>
+        <td>${badge(inv.status || 'Pending')}</td>
+      </tr>`
+    ).join('');
+
+    return `
+      <div class="rpt-month-block">
+        <div class="rpt-month-header" onclick="toggleMonthBlock(this)">
+          <div class="rpt-month-label">
+            <span class="rpt-month-chevron">▶</span>
+            <strong>${getMonthLabel(k)}</strong>
+            <span class="rpt-month-inv-count">${d.invoices.length} invoice${d.invoices.length !== 1 ? 's' : ''}</span>
+            <span class="rpt-month-inv-count" style="color:var(--teal);border-color:rgba(78,205,196,.25)">${itemEntries.length} item${itemEntries.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="rpt-month-total">${fmtRs(d.revenue)}</div>
+        </div>
+        <div class="rpt-month-body" style="display:none">
+          <div class="rpt-month-two-col">
+            <div>
+              <div class="rpt-mini-title">Items Consumed</div>
+              <table class="rpt-table rpt-mini-table">
+                <thead><tr><th>Product</th><th>Unit</th><th>Qty</th><th>Amount</th></tr></thead>
+                <tbody>${itemRows || '<tr><td colspan="4" style="color:var(--text3);padding:10px 16px">No item data</td></tr>'}</tbody>
+              </table>
+            </div>
+            <div>
+              <div class="rpt-mini-title">Invoices</div>
+              <table class="rpt-table rpt-mini-table">
+                <thead><tr><th>Invoice #</th><th>Date</th>${custCol}<th>Taxable</th><th>GST</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody>${invRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // ── Assemble full body ────────────────────────────────────
+  body.innerHTML = `
+    <div class="rpt-kpi-grid">
+      ${reportKPI('Total Revenue',  fmtRs(totalRevenue),  'var(--gold)',   `${invs.length} invoices`)}
+      ${reportKPI('Taxable Amount', fmtRs(totalTaxable),  'var(--teal)',   'Excl. GST')}
+      ${reportKPI('GST Collected',  fmtRs(totalGST),      'var(--green)',  'Output tax')}
+      ${reportKPI('Paid',           fmtRs(paid.reduce((s,i)=>s+parseFloat(i.total||0),0)),    'var(--green)',  `${paid.length} invoices`)}
+      ${reportKPI('Pending',        fmtRs(pending.reduce((s,i)=>s+parseFloat(i.total||0),0)), 'var(--orange)', `${pending.length} invoices`)}
+      ${reportKPI('Months Active',  sortedKeys.length, 'var(--blue)', selectedCustomer ? 'For this customer' : 'Total months')}
+    </div>
+
+    <div class="rpt-section-title">Month-on-Month Revenue Summary</div>
+    <div class="rpt-table-wrap">
+      ${reportTable(['Month','Invoices','Taxable','GST','Revenue','vs Prev Month'], momRows, 'No data')}
+    </div>
+
+    <div class="rpt-section-title" style="margin-top:4px">Item-wise Consumption — Overall Totals</div>
+    <div class="rpt-table-wrap">
+      ${overallItemRows.length
+        ? `<table class="rpt-table">
+            <thead><tr><th>#</th><th>Product</th><th>Unit</th><th>Total Qty</th><th>Total Amount</th><th style="min-width:160px">Share of Revenue</th></tr></thead>
+            <tbody>${overallItemRows.join('')}</tbody>
+           </table>`
+        : `<div class="empty-state" style="padding:30px"><div class="empty-icon">📦</div><h3>No item data</h3></div>`
+      }
+    </div>
+
+    <div class="rpt-section-title" style="margin-top:4px">Item × Month Pivot — Consumption Trend</div>
+    <div class="rpt-table-wrap rpt-pivot-wrap">
+      ${pivotItemsSorted.length
+        ? `<table class="rpt-table rpt-pivot-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Unit</th>
+                <th>Total Qty</th>
+                <th>Total Amt</th>
+                ${pivotMonthHeaders}
+              </tr>
+            </thead>
+            <tbody>
+              ${pivotRows}
+              <tr class="rpt-pivot-total-row">
+                <td colspan="2"><strong>Month Total</strong></td>
+                <td>—</td>
+                <td style="color:var(--gold);font-weight:700">${fmtRs(totalRevenue)}</td>
+                ${pivotTotalCells}
+              </tr>
+            </tbody>
+           </table>`
+        : `<div class="empty-state" style="padding:30px"><div class="empty-icon">📊</div><h3>No pivot data</h3></div>`
+      }
+    </div>
+
+    <div class="rpt-section-title" style="margin-top:4px">Monthly Consumption Detail</div>
+    <div class="rpt-month-accordion">${monthBlocks}</div>
+
+    <div class="rpt-actions">
+      <button class="btn btn-gold btn-sm" onclick="exportSalesReportCSV()">↓ Export Invoice CSV</button>
+      <button class="btn btn-teal btn-sm" onclick="exportItemWiseCSV()">↓ Export Item-wise CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="exportPivotCSV()">↓ Export Pivot CSV</button>
+    </div>`;
+}
+
+function toggleMonthBlock(header) {
+  const body = header.nextElementSibling;
+  const chevron = header.querySelector('.rpt-month-chevron');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  chevron.textContent = isOpen ? '▶' : '▼';
+  chevron.style.color = isOpen ? '' : 'var(--gold)';
+}
+
+function exportSalesReportCSV() {
+  const sel = document.getElementById('rpt-cust-dropdown');
+  const selectedCustomer = sel ? sel.value : '';
+  const invs = selectedCustomer
+    ? DB.invoices.filter(i => i.customer === selectedCustomer)
+    : DB.invoices;
+
+  if (!invs.length) { showToast('No data to export', 'error'); return; }
+
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function getMonthLabel(dateStr) {
+    const d = parseDMY(dateStr);
+    if (!d || isNaN(d)) return '-';
+    return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  // Flatten invoice + item lines
+  const header = 'Month,Invoice #,Date,Customer,Product,Qty,Unit,Rate,Amount,Taxable,GST,Invoice Total,Status';
+  const rows = [];
+  invs.slice().sort((a, b) => {
+    const da = parseDMY(a.date), db = parseDMY(b.date);
+    return (da || 0) - (db || 0);
+  }).forEach(inv => {
+    let lineItems = [];
+    try { lineItems = JSON.parse(inv.items || '[]'); } catch(e){}
+    if (lineItems.length) {
+      lineItems.forEach(li => {
+        rows.push([
+          `"${getMonthLabel(inv.date)}"`,
+          `"${inv.invNum || inv.id}"`,
+          `"${migrateDateField(inv.date) || ''}"`,
+          `"${inv.customer || ''}"`,
+          `"${li.product || ''}"`,
+          li.qty || 0,
+          `"${li.unit || ''}"`,
+          li.rate || 0,
+          parseFloat(li.amount || 0).toFixed(2),
+          parseFloat(inv.taxable || 0).toFixed(2),
+          parseFloat(inv.gst || 0).toFixed(2),
+          parseFloat(inv.total || 0).toFixed(2),
+          `"${inv.status || ''}"`
+        ].join(','));
+      });
+    } else {
+      rows.push([
+        `"${getMonthLabel(inv.date)}"`,
+        `"${inv.invNum || inv.id}"`,
+        `"${migrateDateField(inv.date) || ''}"`,
+        `"${inv.customer || ''}"`,
+        '""', 0, '""', 0, 0,
+        parseFloat(inv.taxable || 0).toFixed(2),
+        parseFloat(inv.gst || 0).toFixed(2),
+        parseFloat(inv.total || 0).toFixed(2),
+        `"${inv.status || ''}"`
+      ].join(','));
+    }
+  });
+
+  const csv = [header, ...rows].join('\n');
+  const filename = selectedCustomer
+    ? `Sales_${selectedCustomer.replace(/\s+/g,'_')}_${new Date().toISOString().split('T')[0]}.csv`
+    : `Sales_All_${new Date().toISOString().split('T')[0]}.csv`;
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = filename;
+  a.click();
+  showToast('Sales report exported ✓', 'success');
+}
+
+function exportItemWiseCSV() {
+  const sel = document.getElementById('rpt-cust-dropdown');
+  const selectedCustomer = sel ? sel.value : '';
+  const invs = selectedCustomer
+    ? DB.invoices.filter(i => i.customer === selectedCustomer)
+    : DB.invoices;
+  if (!invs.length) { showToast('No data to export', 'error'); return; }
+
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function getMonthKey(dateStr) {
+    const d = parseDMY(dateStr);
+    if (!d || isNaN(d)) return null;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  function getMonthLabel(k) {
+    const [y, m] = k.split('-');
+    return `${MONTHS_FULL[+m-1]} ${y}`;
+  }
+
+  // Build overall item map
+  const itemMap = {};
+  invs.forEach(inv => {
+    const mk = getMonthKey(inv.date);
+    try {
+      JSON.parse(inv.items || '[]').forEach(li => {
+        const prod = li.product || 'Unknown';
+        const qty  = parseFloat(li.qty || 0);
+        const amt  = parseFloat(li.amount || 0);
+        const unit = li.unit || '';
+        if (!itemMap[prod]) itemMap[prod] = { unit, totalQty: 0, totalAmt: 0, months: {} };
+        itemMap[prod].totalQty += qty;
+        itemMap[prod].totalAmt += amt;
+        if (mk) {
+          if (!itemMap[prod].months[mk]) itemMap[prod].months[mk] = { qty: 0, amount: 0 };
+          itemMap[prod].months[mk].qty    += qty;
+          itemMap[prod].months[mk].amount += amt;
+        }
+      });
+    } catch(e){}
+  });
+
+  const sortedMonths = [...new Set(invs.map(i => getMonthKey(i.date)).filter(Boolean))].sort();
+  const header = ['Product','Unit','Total Qty','Total Amount', ...sortedMonths.map(getMonthLabel).flatMap(m => [`${m} Qty`, `${m} Amt`])].join(',');
+  const rows = Object.entries(itemMap).sort((a,b)=>b[1].totalAmt-a[1].totalAmt).map(([prod, v]) => {
+    const monthCols = sortedMonths.flatMap(k => {
+      const m = v.months[k];
+      return m ? [m.qty, m.amount.toFixed(2)] : [0, '0.00'];
+    });
+    return [`"${prod}"`, `"${v.unit}"`, v.totalQty, v.totalAmt.toFixed(2), ...monthCols].join(',');
+  });
+
+  const suffix = selectedCustomer ? `_${selectedCustomer.replace(/\s+/g,'_')}` : '_All';
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent([header,...rows].join('\n'));
+  a.download = `ItemWise${suffix}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  showToast('Item-wise report exported ✓', 'success');
+}
+
+function exportPivotCSV() {
+  const sel = document.getElementById('rpt-cust-dropdown');
+  const selectedCustomer = sel ? sel.value : '';
+  const invs = selectedCustomer
+    ? DB.invoices.filter(i => i.customer === selectedCustomer)
+    : DB.invoices;
+  if (!invs.length) { showToast('No data to export', 'error'); return; }
+
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function getMonthKey(dateStr) {
+    const d = parseDMY(dateStr);
+    if (!d || isNaN(d)) return null;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  function getMonthLabel(k) {
+    const [y, m] = k.split('-');
+    return `${MONTHS_FULL[+m-1]} ${y}`;
+  }
+
+  const sortedMonths = [...new Set(invs.map(i => getMonthKey(i.date)).filter(Boolean))].sort();
+  const itemMap = {};
+  invs.forEach(inv => {
+    const mk = getMonthKey(inv.date);
+    try {
+      JSON.parse(inv.items || '[]').forEach(li => {
+        const prod = li.product || 'Unknown';
+        if (!itemMap[prod]) itemMap[prod] = { unit: li.unit || '', months: {} };
+        if (mk) {
+          if (!itemMap[prod].months[mk]) itemMap[prod].months[mk] = { qty: 0, amount: 0 };
+          itemMap[prod].months[mk].qty    += parseFloat(li.qty || 0);
+          itemMap[prod].months[mk].amount += parseFloat(li.amount || 0);
+        }
+      });
+    } catch(e){}
+  });
+
+  const header = ['Product','Unit', ...sortedMonths.map(getMonthLabel).flatMap(m => [`${m} Qty`,`${m} Amt`])].join(',');
+  const rows = Object.entries(itemMap).map(([prod, v]) => {
+    const cols = sortedMonths.flatMap(k => {
+      const m = v.months[k];
+      return m ? [m.qty, m.amount.toFixed(2)] : [0,'0.00'];
+    });
+    return [`"${prod}"`,`"${v.unit}"`, ...cols].join(',');
+  });
+
+  const suffix = selectedCustomer ? `_${selectedCustomer.replace(/\s+/g,'_')}` : '_All';
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent([header,...rows].join('\n'));
+  a.download = `Pivot${suffix}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  showToast('Pivot report exported ✓', 'success');
+}
+
+
+function renderPurchasesReport(container) {
+  const purs = DB.purchases;
+  const totalAmt = purs.reduce((s, p) => s + parseFloat(p.total || 0), 0);
+  const totalGST = purs.reduce((s, p) => s + parseFloat(p.gstAmt || 0), 0);
+  const totalTaxable = purs.reduce((s, p) => s + parseFloat(p.taxable || 0), 0);
+
+  // Supplier-wise
+  const supMap = {};
+  purs.forEach(p => {
+    const s = p.supplier || 'Unknown';
+    if (!supMap[s]) supMap[s] = { count: 0, total: 0, gst: 0 };
+    supMap[s].count++;
+    supMap[s].total += parseFloat(p.total || 0);
+    supMap[s].gst += parseFloat(p.gstAmt || 0);
+  });
+  const supRows = Object.entries(supMap)
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([name, d], idx) => `<tr>
+      <td>${idx + 1}</td>
+      <td><strong>${name}</strong></td>
+      <td>${d.count}</td>
+      <td>${fmtRs(d.total - d.gst)}</td>
+      <td style="color:var(--green)">${fmtRs(d.gst)}</td>
+      <td style="color:var(--gold);font-weight:700">${fmtRs(d.total)}</td>
+    </tr>`);
+
+  // Item-wise
+  const itemMap = {};
+  purs.forEach(p => {
+    const it = p.item || 'Unknown';
+    if (!itemMap[it]) itemMap[it] = { count: 0, qty: 0, total: 0 };
+    itemMap[it].count++;
+    itemMap[it].qty += parseFloat(p.qty || 0);
+    itemMap[it].total += parseFloat(p.total || 0);
+  });
+  const itemRows = Object.entries(itemMap)
+    .sort((a, b) => b[1].total - a[1].total)
+    .map(([name, d], idx) => `<tr>
+      <td>${idx + 1}</td>
+      <td><strong>${name}</strong></td>
+      <td>${d.count}</td>
+      <td>${d.qty}</td>
+      <td style="color:var(--gold);font-weight:700">${fmtRs(d.total)}</td>
+    </tr>`);
+
+  container.innerHTML = `
+    ${reportHeader('Purchase Report', `${purs.length} entries · All time`, '🛒')}
+    <div class="rpt-kpi-grid">
+      ${reportKPI('Total Purchases', fmtRs(totalAmt), 'var(--gold)', `${purs.length} entries`)}
+      ${reportKPI('Taxable Amount', fmtRs(totalTaxable), 'var(--teal)', 'Excl. GST')}
+      ${reportKPI('GST Paid (ITC)', fmtRs(totalGST), 'var(--green)', 'Input tax credit')}
+      ${reportKPI('Suppliers', DB.suppliers.length, 'var(--orange)', 'Active suppliers')}
+    </div>
+
+    <div class="rpt-section-title">Supplier-wise Purchases</div>
+    ${reportTable(['#','Supplier','Orders','Taxable','GST (ITC)','Total'], supRows, 'No supplier data')}
+
+    <div class="rpt-section-title" style="margin-top:24px">Item-wise Purchases</div>
+    ${reportTable(['#','Item','Orders','Total Qty','Total Paid'], itemRows, 'No item data')}
+
+    <div class="rpt-actions">
+      <button class="btn btn-gold btn-sm" onclick="exportReportCSV('purchases')">↓ Export CSV</button>
+    </div>`;
+}
+
+/* ── INVENTORY REPORT ─────────────────────────────────────── */
+function renderInventoryReport(container) {
+  const items = DB.items;
+  const purchasedMap = {};
+  DB.purchases.forEach(p => {
+    if (p.item) { const q = parseFloat(p.qty); purchasedMap[p.item] = (purchasedMap[p.item] || 0) + (isNaN(q) ? 0 : q); }
+  });
+  const invoicedMap = {};
+  DB.invoices.forEach(inv => {
+    try { JSON.parse(inv.items || '[]').forEach(li => {
+      if (li.product) { const q = parseFloat(li.qty); invoicedMap[li.product] = (invoicedMap[li.product] || 0) + (isNaN(q) ? 0 : q); }
+    }); } catch(e){}
+  });
+
+  let totalStockValue = 0, lowStockCount = 0, outOfStock = 0;
+  const itemRows = items.map((item, idx) => {
+    const opening = parseFloat(item.openingStock ?? item.stock ?? 0);
+    const purchased = purchasedMap[item.name] || 0;
+    const invoiced = invoicedMap[item.name] || 0;
+    const stock = Math.max(0, opening + purchased - invoiced);
+    const minStock = parseFloat(item.minStock || 0);
+    const stockValue = stock * parseFloat(item.pprice || 0);
+    totalStockValue += stockValue;
+    if (stock <= 0) outOfStock++;
+    else if (stock <= minStock) lowStockCount++;
+    const statusColor = stock <= 0 ? 'var(--red)' : stock <= minStock ? 'var(--orange)' : 'var(--green)';
+    const statusLabel = stock <= 0 ? 'Out of Stock' : stock <= minStock ? 'Low Stock' : 'In Stock';
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td><strong>${item.name}</strong></td>
+      <td><small style="color:var(--text3)">${item.category || '-'}</small></td>
+      <td>${opening}</td>
+      <td style="color:var(--teal)">+${purchased}</td>
+      <td style="color:var(--orange)">-${invoiced}</td>
+      <td style="color:${statusColor};font-weight:700">${stock}</td>
+      <td>${minStock}</td>
+      <td>${fmtRs(item.pprice || 0)}</td>
+      <td style="color:var(--gold);font-weight:700">${fmtRs(stockValue)}</td>
+      <td><span class="badge ${stock <= 0 ? 'badge-red' : stock <= minStock ? 'badge-orange' : 'badge-green'}">${statusLabel}</span></td>
+    </tr>`;
+  });
+
+  container.innerHTML = `
+    ${reportHeader('Inventory Report', `${items.length} products · Stock snapshot`, '📦')}
+    <div class="rpt-kpi-grid">
+      ${reportKPI('Total Items', items.length, 'var(--gold)', 'SKUs in inventory')}
+      ${reportKPI('Stock Value', fmtRs(totalStockValue), 'var(--teal)', 'At purchase price')}
+      ${reportKPI('Low Stock', lowStockCount, 'var(--orange)', 'Need reorder')}
+      ${reportKPI('Out of Stock', outOfStock, 'var(--red)', 'Zero quantity')}
+    </div>
+
+    <div class="rpt-section-title">Stock Ledger</div>
+    ${reportTable(['#','Product','Category','Opening','Purchased','Invoiced','Current','Min Stock','Buy Price','Stock Value','Status'], itemRows, 'No inventory data')}
+
+    <div class="rpt-actions">
+      <button class="btn btn-gold btn-sm" onclick="exportData('inventory')">↓ Export CSV</button>
+    </div>`;
+}
+
+/* ── PROFIT & LOSS ────────────────────────────────────────── */
+function renderPLReport(container) {
+  const totalRevenue = DB.invoices.reduce((s, i) => s + parseFloat(i.total || 0), 0);
+  const totalRevenueTaxable = DB.invoices.reduce((s, i) => s + parseFloat(i.taxable || 0), 0);
+  const outputGST = DB.invoices.reduce((s, i) => s + parseFloat(i.gst || 0), 0);
+  const totalPurchases = DB.purchases.reduce((s, p) => s + parseFloat(p.total || 0), 0);
+  const totalPurTaxable = DB.purchases.reduce((s, p) => s + parseFloat(p.taxable || 0), 0);
+  const inputGST = DB.purchases.reduce((s, p) => s + parseFloat(p.gstAmt || 0), 0);
+  const grossProfit = totalRevenueTaxable - totalPurTaxable;
+  const netGST = Math.max(0, outputGST - inputGST);
+  const netProfit = grossProfit - netGST;
+  const margin = totalRevenueTaxable > 0 ? (grossProfit / totalRevenueTaxable * 100).toFixed(1) : 0;
+
+  // Category-wise P&L
+  const catMap = {};
+  DB.invoices.forEach(inv => {
+    try {
+      JSON.parse(inv.items || '[]').forEach(li => {
+        const item = DB.items.find(i => i.name === li.product);
+        const cat = item?.category || 'Uncategorized';
+        const rev = parseFloat(li.amount || 0);
+        const cost = parseFloat(li.qty || 0) * parseFloat(item?.pprice || 0);
+        if (!catMap[cat]) catMap[cat] = { revenue: 0, cost: 0 };
+        catMap[cat].revenue += rev;
+        catMap[cat].cost += cost;
+      });
+    } catch(e){}
+  });
+  const catRows = Object.entries(catMap)
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .map(([cat, d], idx) => {
+      const profit = d.revenue - d.cost;
+      const catMargin = d.revenue > 0 ? (profit / d.revenue * 100).toFixed(1) : 0;
+      return `<tr>
+        <td>${idx + 1}</td>
+        <td><strong>${cat}</strong></td>
+        <td>${fmtRs(d.revenue)}</td>
+        <td>${fmtRs(d.cost)}</td>
+        <td style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${fmtRs(profit)}</td>
+        <td style="color:${catMargin >= 0 ? 'var(--teal)' : 'var(--red)'}">${catMargin}%</td>
+      </tr>`;
+    });
+
+  container.innerHTML = `
+    ${reportHeader('Profit & Loss', 'Revenue vs Cost analysis · All time', '💰')}
+    <div class="rpt-kpi-grid">
+      ${reportKPI('Total Revenue', fmtRs(totalRevenue), 'var(--gold)', 'Incl. GST')}
+      ${reportKPI('Taxable Revenue', fmtRs(totalRevenueTaxable), 'var(--teal)', 'Excl. GST')}
+      ${reportKPI('Total Purchases', fmtRs(totalPurchases), 'var(--red)', 'Cost of goods')}
+      ${reportKPI('Gross Profit', fmtRs(grossProfit), grossProfit >= 0 ? 'var(--green)' : 'var(--red)', `${margin}% margin`)}
+      ${reportKPI('Net GST Payable', fmtRs(netGST), 'var(--orange)', 'Output − Input')}
+      ${reportKPI('Net Profit (est.)', fmtRs(netProfit), netProfit >= 0 ? 'var(--green)' : 'var(--red)', 'After GST liability')}
+    </div>
+
+    <div class="rpt-pl-statement">
+      <div class="rpt-section-title" style="margin-bottom:12px">P&L Statement</div>
+      <div class="rpt-pl-row"><span>Revenue (Taxable)</span><span style="color:var(--gold)">${fmtRs(totalRevenueTaxable)}</span></div>
+      <div class="rpt-pl-row"><span>Output GST Collected</span><span style="color:var(--green)">${fmtRs(outputGST)}</span></div>
+      <div class="rpt-pl-row bold"><span>Gross Revenue (Incl. GST)</span><span>${fmtRs(totalRevenue)}</span></div>
+      <div class="rpt-pl-divider"></div>
+      <div class="rpt-pl-row"><span>Cost of Purchases (Taxable)</span><span style="color:var(--red)">- ${fmtRs(totalPurTaxable)}</span></div>
+      <div class="rpt-pl-row"><span>Input Tax Credit (ITC)</span><span style="color:var(--green)">+ ${fmtRs(inputGST)}</span></div>
+      <div class="rpt-pl-row bold"><span>Gross Profit</span><span style="color:${grossProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtRs(grossProfit)}</span></div>
+      <div class="rpt-pl-divider"></div>
+      <div class="rpt-pl-row"><span>Net GST Payable (Output − ITC)</span><span style="color:var(--orange)">- ${fmtRs(netGST)}</span></div>
+      <div class="rpt-pl-row bold final"><span>Estimated Net Profit</span><span style="color:${netProfit >= 0 ? 'var(--gold)' : 'var(--red)'}">${fmtRs(netProfit)}</span></div>
+    </div>
+
+    ${catRows.length ? `<div class="rpt-section-title" style="margin-top:24px">Category-wise Profitability</div>
+    ${reportTable(['#','Category','Revenue','Est. Cost','Gross Profit','Margin'], catRows, 'No category data')}` : ''}
+
+    <div class="rpt-actions">
+      <button class="btn btn-gold btn-sm" onclick="exportPLCSV()">↓ Export P&L CSV</button>
+    </div>`;
+}
+
+/* ── MONTHLY SUMMARY ──────────────────────────────────────── */
+function renderMonthlyReport(container) {
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Build month map
+  const monthMap = {};
+  function getKey(dateStr) {
+    const d = parseDMY(dateStr);
+    if (!d || isNaN(d)) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  function getLabel(key) {
+    const [y, m] = key.split('-');
+    return `${MONTHS_FULL[+m - 1]} ${y}`;
+  }
+
+  DB.invoices.forEach(i => {
+    const k = getKey(i.date);
+    if (!k) return;
+    if (!monthMap[k]) monthMap[k] = { revenue: 0, purchases: 0, gstOut: 0, gstIn: 0, invCount: 0, purCount: 0 };
+    monthMap[k].revenue += parseFloat(i.total || 0);
+    monthMap[k].gstOut += parseFloat(i.gst || 0);
+    monthMap[k].invCount++;
+  });
+  DB.purchases.forEach(p => {
+    const k = getKey(p.date);
+    if (!k) return;
+    if (!monthMap[k]) monthMap[k] = { revenue: 0, purchases: 0, gstOut: 0, gstIn: 0, invCount: 0, purCount: 0 };
+    monthMap[k].purchases += parseFloat(p.total || 0);
+    monthMap[k].gstIn += parseFloat(p.gstAmt || 0);
+    monthMap[k].purCount++;
+  });
+
+  const sortedKeys = Object.keys(monthMap).sort();
+  const monthRows = sortedKeys.map(k => {
+    const d = monthMap[k];
+    const profit = d.revenue - d.purchases;
+    const netGST = Math.max(0, d.gstOut - d.gstIn);
+    return `<tr>
+      <td><strong>${getLabel(k)}</strong></td>
+      <td>${d.invCount}</td>
+      <td style="color:var(--gold)">${fmtRs(d.revenue)}</td>
+      <td>${d.purCount}</td>
+      <td style="color:var(--red)">${fmtRs(d.purchases)}</td>
+      <td style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${fmtRs(profit)}</td>
+      <td style="color:var(--teal)">${fmtRs(d.gstOut)}</td>
+      <td style="color:var(--green)">${fmtRs(d.gstIn)}</td>
+      <td style="color:var(--orange)">${fmtRs(netGST)}</td>
+    </tr>`;
+  });
+
+  // Totals row
+  const totals = sortedKeys.reduce((acc, k) => {
+    const d = monthMap[k];
+    acc.revenue += d.revenue; acc.purchases += d.purchases;
+    acc.gstOut += d.gstOut; acc.gstIn += d.gstIn;
+    acc.invCount += d.invCount; acc.purCount += d.purCount;
+    return acc;
+  }, { revenue: 0, purchases: 0, gstOut: 0, gstIn: 0, invCount: 0, purCount: 0 });
+
+  const bestMonthKey = sortedKeys.reduce((best, k) => (!best || monthMap[k].revenue > monthMap[best].revenue) ? k : best, null);
+  const bestMonth = bestMonthKey ? getLabel(bestMonthKey) : '-';
+
+  container.innerHTML = `
+    ${reportHeader('Monthly Summary', `${sortedKeys.length} months of data`, '📅')}
+    <div class="rpt-kpi-grid">
+      ${reportKPI('Total Revenue', fmtRs(totals.revenue), 'var(--gold)', `${totals.invCount} invoices`)}
+      ${reportKPI('Total Purchases', fmtRs(totals.purchases), 'var(--red)', `${totals.purCount} entries`)}
+      ${reportKPI('Gross Profit', fmtRs(totals.revenue - totals.purchases), (totals.revenue >= totals.purchases) ? 'var(--green)' : 'var(--red)', 'Revenue − Purchases')}
+      ${reportKPI('Best Month', bestMonth, 'var(--teal)', bestMonthKey ? fmtRs(monthMap[bestMonthKey].revenue) : '-')}
+    </div>
+
+    <div class="rpt-section-title">Month-by-Month Breakdown</div>
+    ${sortedKeys.length
+      ? reportTable(
+          ['Month','Invoices','Revenue','Purchases','Purchase Cost','Gross Profit','GST Output','GST Input','Net GST'],
+          monthRows
+        )
+      : `<div class="empty-state"><div class="empty-icon">📅</div><h3>No monthly data yet</h3></div>`
+    }
+
+    <div class="rpt-actions">
+      <button class="btn btn-gold btn-sm" onclick="exportMonthlyCSV()">↓ Export CSV</button>
+    </div>`;
+}
+
+/* ── Export helpers ──────────────────────────────────────── */
+function exportReportCSV(type) { exportData(type === 'sales' ? 'invoices' : 'purchases'); }
+
+function exportPLCSV() {
+  const totalRevenue = DB.invoices.reduce((s,i)=>s+parseFloat(i.total||0),0);
+  const totalTaxable = DB.invoices.reduce((s,i)=>s+parseFloat(i.taxable||0),0);
+  const outputGST = DB.invoices.reduce((s,i)=>s+parseFloat(i.gst||0),0);
+  const totalPurTaxable = DB.purchases.reduce((s,p)=>s+parseFloat(p.taxable||0),0);
+  const inputGST = DB.purchases.reduce((s,p)=>s+parseFloat(p.gstAmt||0),0);
+  const grossProfit = totalTaxable - totalPurTaxable;
+  const netGST = Math.max(0, outputGST - inputGST);
+  const csv = `Profit & Loss Report\nMetric,Amount\nRevenue (Taxable),${totalTaxable.toFixed(2)}\nOutput GST,${outputGST.toFixed(2)}\nGross Revenue (Incl GST),${totalRevenue.toFixed(2)}\nCost of Purchases,${totalPurTaxable.toFixed(2)}\nInput Tax Credit,${inputGST.toFixed(2)}\nGross Profit,${grossProfit.toFixed(2)}\nNet GST Payable,${netGST.toFixed(2)}\nEstimated Net Profit,${(grossProfit - netGST).toFixed(2)}`;
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'PL_Report_' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+  showToast('P&L exported ✓', 'success');
+}
+
+function exportMonthlyCSV() {
+  const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function getKey(dateStr) {
+    const d = parseDMY(dateStr);
+    if (!d || isNaN(d)) return null;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  const monthMap = {};
+  DB.invoices.forEach(i => {
+    const k = getKey(i.date); if (!k) return;
+    if (!monthMap[k]) monthMap[k] = {revenue:0,purchases:0,gstOut:0,gstIn:0,invCount:0,purCount:0};
+    monthMap[k].revenue += parseFloat(i.total||0); monthMap[k].gstOut += parseFloat(i.gst||0); monthMap[k].invCount++;
+  });
+  DB.purchases.forEach(p => {
+    const k = getKey(p.date); if (!k) return;
+    if (!monthMap[k]) monthMap[k] = {revenue:0,purchases:0,gstOut:0,gstIn:0,invCount:0,purCount:0};
+    monthMap[k].purchases += parseFloat(p.total||0); monthMap[k].gstIn += parseFloat(p.gstAmt||0); monthMap[k].purCount++;
+  });
+  const sortedKeys = Object.keys(monthMap).sort();
+  const header = 'Month,Invoices,Revenue,Purchases,Gross Profit,GST Output,GST Input,Net GST';
+  const rows = sortedKeys.map(k => {
+    const d = monthMap[k];
+    const label = `${MONTHS_FULL[+k.split('-')[1]-1]} ${k.split('-')[0]}`;
+    return `"${label}",${d.invCount},${d.revenue.toFixed(2)},${d.purchases.toFixed(2)},${(d.revenue-d.purchases).toFixed(2)},${d.gstOut.toFixed(2)},${d.gstIn.toFixed(2)},${Math.max(0,d.gstOut-d.gstIn).toFixed(2)}`;
+  });
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent([header,...rows].join('\n'));
+  a.download = 'Monthly_Report_' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+  showToast('Monthly report exported ✓', 'success');
 }
 document.addEventListener('DOMContentLoaded', () => {});
