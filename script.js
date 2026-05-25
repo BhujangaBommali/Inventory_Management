@@ -519,13 +519,13 @@ const tbody= document.getElementById('inv-line-items');
 const rowNum = tbody.rows.length + 1;
 const row= document.createElement('tr');
 const itemOpts = DB.items.map(i =>
-`<option value="${i.name}" data-hsn="${i.hsn || ''}" data-rate="${i.sprice || 0}" data-gst="${i.gst || 18}" data-unit="${i.unit || 'Nos'}">${i.name}</option>`
+`<option value="${i.name}" data-hsn="${i.hsn || ''}" data-rate="${i.sprice || 0}" data-gst="${i.gst || 18}" data-unit="${i.unit || 'Nos'}" data-category="${i.category || ''}">${i.name}</option>`
 ).join('');
 row.innerHTML = `
 <td>${rowNum}</td>
 <td><select onchange="autofillInvoiceRow(this)" style="min-width:140px"><option value="">— Select —</option>${itemOpts}</select></td>
 <td><input placeholder="HSN/SAC"></td>
-<td><input placeholder="Description"></td>
+<td><input placeholder="Category" readonly style="background:var(--surface);color:var(--text-muted)"></td>
 <td><input type="number" value="1" step="1" oninput="validateQtyInput(this)"></td>
 <td><input placeholder="Pcs" oninput="onUnitChange(this)"></td>
 <td><input type="number" value="0" step="0.01" oninput="recalcInvoice()"></td>
@@ -590,6 +590,7 @@ const row= sel.closest('tr');
 const unit = opt.dataset.unit || 'Pcs';
 const qtyInput = row.children[4].querySelector('input');
 row.children[2].querySelector('input').value = opt.dataset.hsn|| '';
+row.children[3].querySelector('input').value = opt.dataset.category || '';
 row.children[6].querySelector('input').value = opt.dataset.rate || 0;
 row.children[7].querySelector('input').value = opt.dataset.gst|| 18;
 row.children[5].querySelector('input').value = unit;
@@ -894,14 +895,15 @@ const gstType = inv.gstType;
 const grandTotal = parseFloat(inv.total || 0);
 const totalWords = amountInWords(grandTotal);
 const tableHead = printMode
-? `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th></tr></thead>`
-: `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Description</th><th>Qty</th><th>Unit</th><th>Amount</th></tr></thead>`;
+? `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Category</th><th>Qty</th><th>Unit</th></tr></thead>`
+: `<thead><tr><th>#</th><th>Product</th><th>HSN/SAC</th><th>Category</th><th>Qty</th><th>Unit</th><th>Amount</th></tr></thead>`;
 const tableRows = items.map((item, i) => {
 const qtyRaw = parseFloat(item.qty); const qtyFormatted = (isNaN(qtyRaw) ? 0 : qtyRaw).toFixed(3);
+const category = item.desc || (DB.items.find(it => it.name === item.product) || {}).category || '—';
 if (printMode) {
-return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td><strong>${qtyFormatted}</strong></td><td>${item.unit || '—'}</td></tr>`;
+return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${category}</td><td><strong>${qtyFormatted}</strong></td><td>${item.unit || '—'}</td></tr>`;
 }
-return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${item.desc || '—'}</td><td>${qtyFormatted}</td><td>${item.unit || '—'}</td><td>₹${parseFloat(item.amount || 0).toFixed(2)}</td></tr>`;
+return `<tr><td>${i+1}</td><td>${item.product}</td><td>${item.hsn || '—'}</td><td>${category}</td><td>${qtyFormatted}</td><td>${item.unit || '—'}</td><td>₹${parseFloat(item.amount || 0).toFixed(2)}</td></tr>`;
 }).join('');
 const totalsBlock = printMode
 ? `<div class="inv-totals"><div class="inv-totals-box"><div class="inv-totals-row bold"><span>Grand Total</span><span>₹${grandTotal.toFixed(2)}</span></div></div></div>
@@ -1557,8 +1559,12 @@ const rowsToExport = type === 'purchases'
       const avail = stockItem ? Math.max(0, opening + purchased - invoiced) : '';
       return Object.assign({}, r, { availableStock: avail.toString() });
     })
+  : type === 'inventory'
+  ? m.data.map(r => Object.assign({}, r, {
+      openingStock: (r.openingStock != null && r.openingStock !== '') ? r.openingStock : (r.stock ?? '0')
+    }))
   : m.data;
-const csv = [m.cols.join(','), ...rowsToExport.map(r => m.cols.map(c => `"${(r[c] || '').toString().replace(/"/g, '""')}`).join(','))].join('\n');
+const csv = [m.cols.join(','), ...rowsToExport.map(r => m.cols.map(c => `"${(r[c] || '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
 const a = document.createElement('a');
 a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
 a.download = type + '_export_' + new Date().toISOString().split('T')[0] + '.csv';
