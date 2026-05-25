@@ -1,3 +1,49 @@
+/* ═══════════════════════════════════════════════════════════════
+   EXPIRY CONFIGURATION
+   ───────────────────────────────────────────────────────────────
+   Set the date and time when this app should stop working.
+   Format: 'YYYY-MM-DDTHH:MM:SS'   (24-hour, local time)
+   Example: '2026-12-31T23:59:59'  → expires end of 31 Dec 2026
+═══════════════════════════════════════════════════════════════ */
+const APP_EXPIRY = '2026-05-26T12:59:59';   // ← CHANGE THIS DATE & TIME
+
+/* ── Expiry check — runs before anything else ── */
+(function checkExpiry() {
+  const expiry = new Date(APP_EXPIRY);
+  if (isNaN(expiry.getTime())) {
+    console.warn('Invalid APP_EXPIRY date. Check format: YYYY-MM-DDTHH:MM:SS');
+    return;
+  }
+  if (new Date() > expiry) {
+    /* Hide login, show maintenance after page loads */
+    document.addEventListener('DOMContentLoaded', function () {
+      showMaintenancePage();
+    });
+    /* Also handle if DOM already loaded */
+    if (document.readyState !== 'loading') showMaintenancePage();
+  }
+})();
+
+function showMaintenancePage() {
+  /* Hide everything except maintenance overlay */
+  const loginOverlay = document.getElementById('login-overlay');
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const mainEl = document.querySelector('main');
+  const sidebar = document.getElementById('sidebar');
+  const hamburger = document.getElementById('hamburger-btn');
+  const sidebarOverlay = document.getElementById('sidebar-overlay');
+  if (loginOverlay)    loginOverlay.style.display  = 'none';
+  if (loadingOverlay)  loadingOverlay.style.display = 'none';
+  if (mainEl)          mainEl.style.display         = 'none';
+  if (sidebar)         sidebar.style.display         = 'none';
+  if (hamburger)       hamburger.style.display        = 'none';
+  if (sidebarOverlay)  sidebarOverlay.style.display   = 'none';
+  const maint = document.getElementById('maintenance-overlay');
+  if (maint) maint.classList.add('active');
+  /* Intercept login attempts made after expiry */
+  window._appExpired = true;
+}
+
 document.addEventListener('contextmenu', e => e.preventDefault());
 document.onkeydown = e => {if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && e.keyCode === 73) || (e.ctrlKey && e.keyCode === 85)) return false;};
 const CONFIG = {WEBAPP_URL: "https://script.google.com/macros/s/AKfycbx_lMJ3TaGPTABdhd9Zn9iePICYlPi_0Vz133XOXsvMuccDpYjSGt96aczQ4A42T81Z/exec"};
@@ -14,6 +60,7 @@ document.getElementById('login-error').textContent = '';
 if (role === 'harnath') setTimeout(() => document.getElementById('login-pass-input').focus(), 50);
 }
 function doLogin() {
+if (window._appExpired) { showMaintenancePage(); return; }
 if (!selectedLoginRole) {
 const err = document.getElementById('login-error');
 err.style.textAlign = 'center';
