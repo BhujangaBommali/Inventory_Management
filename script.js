@@ -211,111 +211,236 @@ document.getElementById('rep-profit').style.color = profit >= 0 ? 'var(--gold)' 
 }
 function fmt(el, val) { el.textContent = '₹' + val.toFixed(2); }
 function badge(status) {const map = { Paid: 'badge-green', Pending: 'badge-orange', Overdue: 'badge-red', Partial: 'badge-blue', Saved: 'badge-teal' };return `<span class="badge ${map[status] || 'badge-blue'}">${status}</span>`;}
-function openNewPurchase() {document.getElementById('pur-po').value = 'PO-' + Date.now();document.getElementById('pur-date').value = todayDMY();calcPurTotal();openModal('modal-purchase');}
-function autofillPurchasePrice() {const itemName = document.getElementById('pur-item').value;const item = DB.items.find(i => i.name === itemName);
-if (item) {document.getElementById('pur-price').value = item.pprice || '';document.getElementById('pur-tax').value = item.gst|| '18';calcPurTotal();}}
+function openNewPurchase() {
+  document.getElementById('pur-po').value = 'PO-' + Date.now();
+  document.getElementById('pur-date').value = todayDMY();
+  document.getElementById('pur-supplier').value = '';
+  document.getElementById('pur-gst-type').value = 'intra';
+  document.getElementById('pur-status').value = 'Paid';
+  document.getElementById('pur-billno').value = '';
+  document.getElementById('pur-billdate').value = '';
+  document.getElementById('pur-notes').value = '';
+  document.getElementById('pur-line-items').innerHTML = '';
+  addPurchaseRow();
+  calcPurTotal();
+  openModal('modal-purchase');
+}
+
+function addPurchaseRow() {
+  const tbody = document.getElementById('pur-line-items');
+  const rowNum = tbody.rows.length + 1;
+  const row = document.createElement('tr');
+  const itemOpts = DB.items.map(i =>
+    `<option value="${i.name}" data-hsn="${i.hsn || ''}" data-pprice="${i.pprice || 0}" data-gst="${i.gst || 18}" data-unit="${i.unit || 'Nos'}">${i.name}</option>`
+  ).join('');
+  row.innerHTML = `
+    <td>${rowNum}</td>
+    <td><select onchange="autofillPurchaseRow(this)" style="min-width:140px"><option value="">— Select Item —</option>${itemOpts}</select></td>
+    <td><input placeholder="HSN/SAC" style="width:80px"></td>
+    <td><input type="number" value="1" min="0.001" step="0.001" oninput="calcPurTotal()" style="width:70px"></td>
+    <td><input type="number" value="0" step="0.01" oninput="calcPurTotal()" style="width:90px"></td>
+    <td><select onchange="calcPurTotal()" style="width:90px"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18" selected>18%</option><option value="28">28%</option></select></td>
+    <td class="pur-taxable-cell" style="color:var(--teal)">0.00</td>
+    <td class="pur-gst-cell" style="color:var(--green)">0.00</td>
+    <td class="pur-rowtotal-cell" style="color:var(--gold);font-weight:600">0.00</td>
+    <td><button onclick="this.closest('tr').remove();calcPurTotal()" style="background:var(--red-dim);border:none;color:var(--red);border-radius:4px;padding:4px 8px;cursor:pointer">✕</button></td>`;
+  tbody.appendChild(row);
+}
+
+function autofillPurchaseRow(sel) {
+  const opt = sel.selectedOptions[0];
+  if (!opt || !opt.value) return;
+  const row = sel.closest('tr');
+  row.children[2].querySelector('input').value = opt.dataset.hsn || '';
+  row.children[4].querySelector('input').value = opt.dataset.pprice || '';
+  row.children[5].querySelector('select').value = opt.dataset.gst || '18';
+  calcPurTotal();
+}
+
 function calcPurTotal() {
-const qty= +document.getElementById('pur-qty').value || 0;
-const price= +document.getElementById('pur-price').value || 0;
-const rate = +document.getElementById('pur-tax').value || 0;
-const type = document.getElementById('pur-gst-type').value;
-const taxable = qty * price;const gst = taxable * rate / 100;let cgst = 0, sgst = 0, igst = 0;
-if (type === 'intra') { cgst = sgst = gst / 2; } else { igst = gst; }
-document.getElementById('pur-taxable').value= taxable.toFixed(2);
-document.getElementById('pur-gst-amt').value= gst.toFixed(2);
-document.getElementById('pur-total').value= (taxable + gst).toFixed(2);
-const bd = document.getElementById('pur-gst-breakdown');
-if (taxable > 0) {
-bd.style.display = 'block';
-document.getElementById('pur-gs-taxable').textContent = '₹' + taxable.toFixed(2);
-document.getElementById('pur-gs-total').textContent = '₹' + (taxable + gst).toFixed(2);
-if (type === 'intra') {
-document.getElementById('pur-gs-cgst-row').style.display = '';
-document.getElementById('pur-gs-sgst-row').style.display = '';
-document.getElementById('pur-gs-igst-row').style.display = 'none';
-document.getElementById('pur-gs-cgst-rate').textContent= (rate / 2) + '';
-document.getElementById('pur-gs-sgst-rate').textContent= (rate / 2) + '';
-document.getElementById('pur-gs-cgst').textContent = '₹' + cgst.toFixed(2);
-document.getElementById('pur-gs-sgst').textContent = '₹' + sgst.toFixed(2);
-} else {
-document.getElementById('pur-gs-cgst-row').style.display = 'none';
-document.getElementById('pur-gs-sgst-row').style.display = 'none';
-document.getElementById('pur-gs-igst-row').style.display = '';
-document.getElementById('pur-gs-igst-rate').textContent= rate + '';
-document.getElementById('pur-gs-igst').textContent = '₹' + igst.toFixed(2);
+  const type = document.getElementById('pur-gst-type').value;
+  let totalTaxable = 0, totalGST = 0, totalCGST = 0, totalSGST = 0, totalIGST = 0;
+  document.querySelectorAll('#pur-line-items tr').forEach(row => {
+    const qty = parseFloat(row.children[3].querySelector('input').value) || 0;
+    const price = parseFloat(row.children[4].querySelector('input').value) || 0;
+    const rate = parseFloat(row.children[5].querySelector('select').value) || 0;
+    const taxable = qty * price;
+    const gst = taxable * rate / 100;
+    const rowTotal = taxable + gst;
+    row.querySelector('.pur-taxable-cell').textContent = taxable.toFixed(2);
+    row.querySelector('.pur-gst-cell').textContent = gst.toFixed(2);
+    row.querySelector('.pur-rowtotal-cell').textContent = rowTotal.toFixed(2);
+    totalTaxable += taxable;
+    totalGST += gst;
+    if (type === 'intra') { totalCGST += gst / 2; totalSGST += gst / 2; } else { totalIGST += gst; }
+  });
+  document.getElementById('pur-subtotal').textContent = '₹' + totalTaxable.toFixed(2);
+  document.getElementById('pur-gst-amt').textContent = '₹' + totalGST.toFixed(2);
+  document.getElementById('pur-total').textContent = '₹' + (totalTaxable + totalGST).toFixed(2);
+  if (type === 'intra') {
+    document.getElementById('pur-gs-cgst-row').style.display = '';
+    document.getElementById('pur-gs-sgst-row').style.display = '';
+    document.getElementById('pur-gs-igst-row').style.display = 'none';
+    document.getElementById('pur-gs-cgst').textContent = '₹' + totalCGST.toFixed(2);
+    document.getElementById('pur-gs-sgst').textContent = '₹' + totalSGST.toFixed(2);
+  } else {
+    document.getElementById('pur-gs-cgst-row').style.display = 'none';
+    document.getElementById('pur-gs-sgst-row').style.display = 'none';
+    document.getElementById('pur-gs-igst-row').style.display = '';
+    document.getElementById('pur-gs-igst').textContent = '₹' + totalIGST.toFixed(2);
+  }
 }
-} else { bd.style.display = 'none'; }
-}
+
 async function savePurchase() {
-const supplier = document.getElementById('pur-supplier').value;
-const item = document.getElementById('pur-item').value;
-if (!supplier || !item) { showToast('Please select supplier and item', 'error'); return; }
-const qty = parseFloat(document.getElementById('pur-qty').value) || 0;
-if (qty <= 0) { showFieldError('pur-qty', 'Quantity must be greater than 0'); return; }
-const purDate = document.getElementById('pur-date').value.trim();
-const btn = document.getElementById('save-purchase-btn');
-if (!purDate || !isValidDMY(purDate)) {
-showFieldError('pur-date', 'Enter a valid date in DD-MM-YYYY format (e.g. 19-04-2026)');
-btn.disabled = false; btn.innerHTML = 'Save Purchase';
-return;
-}
-const billno = document.getElementById('pur-billno').value.trim();
-if (!billno) {
-showFieldError('pur-billno', 'Supplier Invoice # is required before saving');
-return;
-}
-const billdate = document.getElementById('pur-billdate').value.trim();
-if (!billdate || !isValidDMY(billdate)) {
-showFieldError('pur-billdate', 'Enter a valid Supplier Invoice Date in DD-MM-YYYY format');
-return;
-}
-btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
-const taxable = +document.getElementById('pur-taxable').value || 0;
-const gstAmt= +document.getElementById('pur-gst-amt').value || 0;
-const type= document.getElementById('pur-gst-type').value;
-const rate= +document.getElementById('pur-tax').value || 0;
-const row = {
-id: 'PUR-' + Date.now(),
-po: document.getElementById('pur-po').value,
-date: purDate, supplier, item, qty: qty.toString(),
-taxable, gstAmt,
-cgst: type === 'intra' ? (gstAmt / 2).toFixed(2) : 0,
-sgst: type === 'intra' ? (gstAmt / 2).toFixed(2) : 0,
-igst: type === 'inter' ? gstAmt.toFixed(2): 0,
-total: document.getElementById('pur-total').value,
-status:document.getElementById('pur-status').value,
-billno:document.getElementById('pur-billno').value,
-billdate:document.getElementById('pur-billdate').value,
-notes: document.getElementById('pur-notes').value,
-gstRate: rate, gstType: type,
-createdAt: new Date().toISOString()
-};
-try {
-await appendRow('purchases', row);
-DB.purchases.push(row);
-await recomputeStock(item);
-renderPurchases(); renderItems(); updateDashboard();
-closeModal('modal-purchase');
-showToast('Purchase saved to Google Sheets ✓', 'success');
-document.getElementById('modal-purchase').querySelectorAll('input:not([readonly]),select,textarea').forEach(el => { el.value = ''; });
-} catch(e) {
-showToast('Failed to save: ' + e.message, 'error');
-}
-btn.disabled = false; btn.innerHTML = 'Save Purchase';
+  const supplier = document.getElementById('pur-supplier').value;
+  if (!supplier) { showToast('Please select a supplier', 'error'); return; }
+  const purDate = document.getElementById('pur-date').value.trim();
+  const btn = document.getElementById('save-purchase-btn');
+  if (!purDate || !isValidDMY(purDate)) {
+    showFieldError('pur-date', 'Enter a valid date in DD-MM-YYYY format (e.g. 19-04-2026)');
+    return;
+  }
+  const billno = document.getElementById('pur-billno').value.trim();
+  if (!billno) { showFieldError('pur-billno', 'Supplier Invoice # is required before saving'); return; }
+  const billdate = document.getElementById('pur-billdate').value.trim();
+  if (!billdate || !isValidDMY(billdate)) {
+    showFieldError('pur-billdate', 'Enter a valid Supplier Invoice Date in DD-MM-YYYY format');
+    return;
+  }
+  // Collect line items
+  const lineItems = [];
+  let hasError = false;
+  document.querySelectorAll('#pur-line-items tr').forEach((row, idx) => {
+    const itemName = row.children[1].querySelector('select').value;
+    if (!itemName) return;
+    const qty = parseFloat(row.children[3].querySelector('input').value) || 0;
+    if (qty <= 0) {
+      showToast(`Row ${idx + 1}: Quantity must be greater than 0`, 'error');
+      hasError = true; return;
+    }
+    const price = parseFloat(row.children[4].querySelector('input').value) || 0;
+    const gstRate = parseFloat(row.children[5].querySelector('select').value) || 0;
+    const taxable = qty * price;
+    const gstAmt = taxable * gstRate / 100;
+    lineItems.push({ item: itemName, hsn: row.children[2].querySelector('input').value, qty, price, gstRate, taxable, gstAmt, total: taxable + gstAmt });
+  });
+  if (hasError) return;
+  if (lineItems.length === 0) { showToast('Please add at least one item with a valid selection', 'error'); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
+  const type = document.getElementById('pur-gst-type').value;
+  const po = document.getElementById('pur-po').value;
+  const status = document.getElementById('pur-status').value;
+  const notes = document.getElementById('pur-notes').value;
+  const createdAt = new Date().toISOString();
+  // Save ONE row per line item to Google Sheets, all sharing the same PO number
+  try {
+    for (let i = 0; i < lineItems.length; i++) {
+      const li = lineItems[i];
+      const cgst = type === 'intra' ? (li.gstAmt / 2) : 0;
+      const sgst = type === 'intra' ? (li.gstAmt / 2) : 0;
+      const igst = type === 'inter' ? li.gstAmt : 0;
+      const row = {
+        id: 'PUR-' + Date.now() + '-' + i,
+        po,
+        date: purDate,
+        supplier,
+        item: li.item,
+        qty: li.qty.toString(),
+        taxable: li.taxable.toFixed(2),
+        gstAmt: li.gstAmt.toFixed(2),
+        cgst: cgst.toFixed(2),
+        sgst: sgst.toFixed(2),
+        igst: igst.toFixed(2),
+        total: li.total.toFixed(2),
+        status,
+        billno,
+        billdate,
+        notes,
+        gstRate: li.gstRate,
+        gstType: type,
+        createdAt
+      };
+      await appendRow('purchases', row);
+      DB.purchases.push(row);
+    }
+    const affectedItems = [...new Set(lineItems.map(li => li.item))];
+    for (const itemName of affectedItems) { await recomputeStock(itemName); }
+    renderPurchases(); renderItems(); updateDashboard();
+    closeModal('modal-purchase');
+    showToast(`Purchase saved — ${lineItems.length} item row(s) added to sheet ✓`, 'success');
+    // Reset form fields
+    document.getElementById('pur-supplier').value = '';
+    document.getElementById('pur-billno').value = '';
+    document.getElementById('pur-billdate').value = '';
+    document.getElementById('pur-notes').value = '';
+    document.getElementById('pur-status').value = 'Paid';
+    document.getElementById('pur-gst-type').value = 'intra';
+    document.getElementById('pur-line-items').innerHTML = '';
+  } catch(e) {
+    showToast('Failed to save: ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.innerHTML = 'Save Purchase';
 }
 function renderPurchases() {
 const tbody = document.getElementById('pur-tbody');
 if (!DB.purchases.length) {
-tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchases recorded</h3></div></td></tr>`;
+tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">🛒</div><h3>No purchases recorded</h3></div></td></tr>`;
 return;
 }
-tbody.innerHTML = DB.purchases.slice().reverse().map(p => `
-<tr>
-<td><strong>${p.po || p.id}</strong></td>
-<td>${migrateDateField(p.date) || '-'}</td>
+// Group rows by PO number, preserving order of first occurrence (reversed for newest first)
+const poMap = new Map();
+DB.purchases.slice().reverse().forEach(p => {
+  const po = p.po || p.id;
+  if (!poMap.has(po)) poMap.set(po, []);
+  poMap.get(po).push(p);
+});
+let html = '';
+poMap.forEach((rows, po) => {
+  const first = rows[0];
+  const poTotal = rows.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+  const poTaxable = rows.reduce((s, r) => s + parseFloat(r.taxable || 0), 0);
+  const poCGST = rows.reduce((s, r) => s + parseFloat(r.cgst || 0), 0);
+  const poSGST = rows.reduce((s, r) => s + parseFloat(r.sgst || 0), 0);
+  const poIGST = rows.reduce((s, r) => s + parseFloat(r.igst || 0), 0);
+  const multiItem = rows.length > 1;
+  if (multiItem) {
+    // Header row for the PO group
+    html += `<tr style="background:var(--surface2)">
+<td><strong>${first.billno || '-'}</strong></td><td>${migrateDateField(first.billdate) || '-'}</td>
+<td>${first.supplier || '-'}</td>
+<td style="color:var(--text2);font-style:italic">${rows.length} items</td>
+<td>₹${poTaxable.toFixed(2)}</td>
+<td>₹${poCGST.toFixed(2)}</td>
+<td>₹${poSGST.toFixed(2)}</td>
+<td>₹${poIGST.toFixed(2)}</td>
+<td style="color:var(--gold);font-weight:700">₹${poTotal.toFixed(2)}</td>
+<td>${badge(first.status || 'Paid')}</td>
+<td><button class="btn btn-red btn-sm delete-gated" onclick="deletePurchaseByPO('${po}')" title="Delete all items in this PO" style="display:${canDelete() ? '' : 'none'}">🗑 All</button></td>
+</tr>`;
+    // One sub-row per item
+    rows.forEach(p => {
+      html += `<tr style="background:var(--surface1)">
+<td style="padding-left:24px;color:var(--text3);font-size:12px">↳</td>
+<td style="color:var(--text3);font-size:12px">${p.billno || '-'}</td>
+<td style="color:var(--text3);font-size:12px">—</td>
+<td style="font-size:13px">${p.item || '-'} <small style="color:var(--text3)">×${p.qty}</small></td>
+<td style="font-size:12px">₹${parseFloat(p.taxable || 0).toFixed(2)}</td>
+<td style="font-size:12px">₹${parseFloat(p.cgst || 0).toFixed(2)}</td>
+<td style="font-size:12px">₹${parseFloat(p.sgst || 0).toFixed(2)}</td>
+<td style="font-size:12px">₹${parseFloat(p.igst || 0).toFixed(2)}</td>
+<td style="color:var(--gold);font-size:12px">₹${parseFloat(p.total || 0).toFixed(2)}</td>
+<td></td>
+<td><button class="btn btn-red btn-sm delete-gated" onclick="deletePurchase('${p.id}')" title="Delete this item" style="display:${canDelete() ? '' : 'none'}">🗑</button></td>
+</tr>`;
+    });
+  } else {
+    // Single item — plain row
+    const p = rows[0];
+    html += `<tr>
+<td><strong>${p.billno || '-'}</strong></td>
+<td>${migrateDateField(p.billdate) || '-'}</td>
 <td>${p.supplier || '-'}</td>
-<td>${p.item || '-'}</td>
-<td>${p.qty || 0}</td>
+<td>${p.item || '-'} <small style="color:var(--text3)">×${p.qty}</small></td>
 <td>₹${parseFloat(p.taxable || 0).toFixed(2)}</td>
 <td>₹${parseFloat(p.cgst || 0).toFixed(2)}</td>
 <td>₹${parseFloat(p.sgst || 0).toFixed(2)}</td>
@@ -323,18 +448,38 @@ tbody.innerHTML = DB.purchases.slice().reverse().map(p => `
 <td style="color:var(--gold)">₹${parseFloat(p.total || 0).toFixed(2)}</td>
 <td>${badge(p.status || 'Paid')}</td>
 <td><button class="btn btn-red btn-sm delete-gated" onclick="deletePurchase('${p.id}')" style="display:${canDelete() ? '' : 'none'}">🗑</button></td>
-</tr>`).join('');
+</tr>`;
+  }
+});
+tbody.innerHTML = html;
+}
+async function deletePurchaseByPO(po) {
+if (!canDelete()) { showToast('⛔ Only Harnath (Admin) can delete records.', 'error'); return; }
+const rows = DB.purchases.filter(p => (p.po || p.id) === po);
+if (!rows.length) return;
+if (!confirm(`Delete all ${rows.length} item(s) under PO ${po}? Stock will be adjusted.`)) return;
+try {
+  const affectedItems = new Set();
+  for (const p of rows) {
+    await deleteRow('purchases', p.id);
+    if (p.item) affectedItems.add(p.item);
+  }
+  DB.purchases = DB.purchases.filter(p => (p.po || p.id) !== po);
+  for (const itemName of affectedItems) { await recomputeStock(itemName); }
+  renderPurchases(); renderItems(); updateDashboard();
+  showToast(`PO ${po} deleted — stock adjusted ✓`, 'info');
+} catch(e) { showToast('Delete failed: ' + e.message, 'error'); }
 }
 async function deletePurchase(id) {
 if (!canDelete()) { showToast('⛔ Only Harnath (Admin) can delete records.', 'error'); return; }
-if (!confirm('Delete this purchase? Stock will be adjusted accordingly.')) return;
+if (!confirm('Delete this item row? Stock will be adjusted accordingly.')) return;
 try {
 const pur = DB.purchases.find(p => p.id === id);
 await deleteRow('purchases', id);
 DB.purchases = DB.purchases.filter(p => p.id !== id);
-if (pur && pur.item) await recomputeStock(pur.item);
+if (pur && pur.item) { await recomputeStock(pur.item); }
 renderPurchases(); renderItems(); updateDashboard();
-showToast('Purchase deleted & stock adjusted ✓', 'info');
+showToast('Item row deleted & stock adjusted ✓', 'info');
 } catch(e) { showToast('Delete failed: ' + e.message, 'error'); }
 }
 function openNewInvoice() {
@@ -393,9 +538,11 @@ function getAvailableStock(productName) {
 const stockItem = DB.items.find(i => i.name === productName);
 if (!stockItem) return null;
 const opening = parseFloat(stockItem.openingStock ?? stockItem.stock ?? 0);
-const purchased = DB.purchases
-.filter(p => p.item === productName)
-.reduce((s, p) => { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }, 0);
+// Each purchase row is one item; p.item and p.qty are direct fields
+const purchased = DB.purchases.reduce((s, p) => {
+  if (p.item === productName) { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }
+  return s;
+}, 0);
 let alreadyInvoiced = 0;
 DB.invoices.forEach(inv => {
 try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === productName) { const q = parseFloat(li.qty); alreadyInvoiced += isNaN(q) ? 0 : q; } }); } catch(e){}
@@ -885,9 +1032,11 @@ async function recomputeStock(itemName) {
 const item = DB.items.find(i => i.name === itemName);
 if (!item) return;
 const opening = parseFloat(item.openingStock ?? item.stock ?? 0);
-const purchased = DB.purchases
-.filter(p => p.item === itemName)
-.reduce((s, p) => { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }, 0);
+// Each purchase row is one item (new format); also handles legacy rows
+const purchased = DB.purchases.reduce((s, p) => {
+  if (p.item === itemName) { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }
+  return s;
+}, 0);
 let invoiced = 0;
 DB.invoices.forEach(inv => {
 try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === itemName) { const q = parseFloat(li.qty); invoiced += isNaN(q) ? 0 : q; } }); } catch(e){}
@@ -1279,10 +1428,6 @@ const purSup= document.getElementById('pur-supplier');
 const curSup= purSup.value;
 purSup.innerHTML = '<option value="">— Select Supplier —</option>' + DB.suppliers.map(s => `<option value="${s.company}">${s.company}</option>`).join('');
 purSup.value = curSup;
-const purItem = document.getElementById('pur-item');
-const curItem = purItem.value;
-purItem.innerHTML = '<option value="">— Select Item —</option>' + DB.items.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
-purItem.value = curItem;
 const invCust = document.getElementById('inv-customer');
 const curCust = invCust.value;
 invCust.innerHTML = '<option value="">— Select Customer —</option>' + DB.customers.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
@@ -1388,7 +1533,7 @@ showToast('Company settings saved to Google Sheets ✓', 'success');
 }
 function exportData(type) {
 const maps = {
-purchases: { data: DB.purchases, cols: ['id','po','date','supplier','item','qty','taxable','cgst','sgst','igst','total','status','billno','billdate','notes'] },
+purchases: { data: DB.purchases, cols: ['id','po','date','supplier','item','qty','availableStock','taxable','cgst','sgst','igst','total','status','billno','billdate','notes'] },
 invoices:{ data: DB.invoices,cols: ['id','invNum','date','dueDate','customer','custGstin','gstType','taxable','cgst','sgst','igst','gst','total','status'] },
 inventory: { data: DB.items, cols: ['id','sku','name','type','category','hsn','gst','unit','openingStock','stock','minStock','pprice','sprice'] },
 suppliers: { data: DB.suppliers, cols: ['id','company','contact','email','phone','state','city','gstin','pan'] },
@@ -1396,7 +1541,24 @@ customers: { data: DB.customers, cols: ['id','name','type','email','phone','stat
 };
 const m = maps[type];
 if (!m || !m.data.length) { showToast('No data to export', 'error'); return; }
-const csv = [m.cols.join(','), ...m.data.map(r => m.cols.map(c => `"${(r[c] || '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
+// For purchases: compute current availableStock for each row by looking up DB.items
+const rowsToExport = type === 'purchases'
+  ? m.data.map(r => {
+      const stockItem = DB.items.find(i => i.name === r.item);
+      const opening = parseFloat(stockItem ? (stockItem.openingStock != null ? stockItem.openingStock : stockItem.stock) : 0) || 0;
+      const purchased = DB.purchases.reduce((s, p) => {
+        if (p.item === r.item) { const q = parseFloat(p.qty); return s + (isNaN(q) ? 0 : q); }
+        return s;
+      }, 0);
+      let invoiced = 0;
+      DB.invoices.forEach(inv => {
+        try { JSON.parse(inv.items || '[]').forEach(li => { if (li.product === r.item) { const q = parseFloat(li.qty); invoiced += isNaN(q) ? 0 : q; } }); } catch(e){}
+      });
+      const avail = stockItem ? Math.max(0, opening + purchased - invoiced) : '';
+      return Object.assign({}, r, { availableStock: avail.toString() });
+    })
+  : m.data;
+const csv = [m.cols.join(','), ...rowsToExport.map(r => m.cols.map(c => `"${(r[c] || '').toString().replace(/"/g, '""')}`).join(','))].join('\n');
 const a = document.createElement('a');
 a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
 a.download = type + '_export_' + new Date().toISOString().split('T')[0] + '.csv';
