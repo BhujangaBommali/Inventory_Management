@@ -5,7 +5,7 @@
    Format: 'YYYY-MM-DDTHH:MM:SS'   (24-hour, local time)
    Example: '2026-12-31T23:59:59'  → expires end of 31 Dec 2026
 ═══════════════════════════════════════════════════════════════ */
-const APP_EXPIRY = '2026-05-26T12:59:59';   // ← CHANGE THIS DATE & TIME
+const APP_EXPIRY = '2026-06-26T12:59:59';   // ← CHANGE THIS DATE & TIME
 
 /* ── Expiry check — runs before anything else ── */
 (function checkExpiry() {
